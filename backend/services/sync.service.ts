@@ -2,9 +2,9 @@ import { v4 as uuidv4 } from 'uuid';
 import crypto from 'crypto';
 import zlib from 'zlib';
 import { Readable } from 'stream';
-import { google } from 'googleapis';
 import { query } from '../database/postgres';
 import { SyncRequest, SyncResponse, SyncPullResponse, SyncEvent } from '../models/types';
+import { getStorageProvider } from './storage.service';
 
 let globalSyncVersion = 0;
 
@@ -197,7 +197,7 @@ export const initializeDeviceSyncPointer = async (deviceId: string): Promise<voi
   }
 };
 
-// Upload backup payload with Google Drive integration
+// Upload backup payload with integrated cloud storage provider (abstracted S3/Google Drive)
 export const uploadBackup = async (userId: string, data: any, email?: string): Promise<void> => {
   try {
     // 1. Insert into backups table
@@ -214,7 +214,7 @@ export const uploadBackup = async (userId: string, data: any, email?: string): P
                       (data.resources?.length || 0);
     const sizeInBytes = Buffer.byteLength(JSON.stringify(data));
 
-    // 2. Fetch Google Tokens (Multi-Account Sync)
+    // 2. Fetch credentials (Google Tokens used if Google Drive is active)
     let accessToken: string | null = null;
     let refreshToken: string | null = null;
     let targetEmail: string | null = email || null;
@@ -246,99 +246,33 @@ export const uploadBackup = async (userId: string, data: any, email?: string): P
       }
     }
 
-    const isMock = process.env.GOOGLE_CLIENT_ID === 'MOCK_CLIENT_ID' || !process.env.GOOGLE_CLIENT_ID || !accessToken;
+    // Gzip compress the JSON payload
+    const gzipBuffer = zlib.gzipSync(JSON.stringify(data));
+
     let driveLocation = 'local_database/backups_table';
 
-    if (!isMock && accessToken) {
-      try {
-        // Initialize OAuth2 client
-        const client = new google.auth.OAuth2(
-          process.env.GOOGLE_CLIENT_ID,
-          process.env.GOOGLE_CLIENT_SECRET,
-          process.env.GOOGLE_REDIRECT_URI
-        );
-        client.setCredentials({
-          access_token: accessToken,
-          refresh_token: refreshToken
-        });
-
-        // Set up listener to save refreshed tokens automatically
-        client.on('tokens', async (newTokens) => {
-          if (newTokens.access_token) {
-            if (targetEmail) {
-              await query(
-                `UPDATE oauth_tokens 
-                 SET encrypted_token = $1, expires_at = $2
-                 WHERE user_id = $3 AND email = $4 AND service = 'google'`,
-                [newTokens.access_token, newTokens.expiry_date ? new Date(newTokens.expiry_date) : null, userId, targetEmail]
-              );
-            }
-            await query(
-              `UPDATE users 
-               SET google_access_token = $1, updated_at = CURRENT_TIMESTAMP
-               WHERE id = $2`,
-              [newTokens.access_token, userId]
-            );
-          }
-        });
-
-        const drive = google.drive({ version: 'v3', auth: client });
-
-        // Gzip compress the JSON payload
-        const gzipBuffer = zlib.gzipSync(JSON.stringify(data));
-        
-        // Search if BaseBackup.json already exists in appDataFolder
-        let fileId: string | null = null;
-        try {
-          const listRes = await drive.files.list({
-            q: "name = 'BaseBackup.json' and 'appDataFolder' in parents and trashed = false",
-            spaces: 'appDataFolder',
-            fields: 'files(id, name)',
-          });
-          if (listRes.data.files && listRes.data.files.length > 0) {
-            fileId = listRes.data.files[0].id || null;
-          }
-        } catch (e) {
-          console.warn('[Sync] Error searching for backup file on Google Drive:', e);
+    try {
+      const storageProvider = getStorageProvider();
+      const uploadResult = await storageProvider.uploadFile(
+        userId,
+        gzipBuffer,
+        {
+          name: 'BaseBackup.json',
+          mimeType: 'application/gzip'
+        },
+        {
+          accessToken,
+          refreshToken,
+          email: targetEmail || undefined
         }
-
-        const media = {
-          mimeType: 'application/gzip',
-          body: Readable.from(gzipBuffer)
-        };
-
-        if (fileId) {
-          // Overwrite existing file
-          const updateRes = await drive.files.update({
-            fileId,
-            media,
-          });
-          driveLocation = `google_drive/appDataFolder/BaseBackup.json?id=${updateRes.data.id}`;
-          console.log('[Sync] Overwrote existing BaseBackup.json on Google Drive');
-        } else {
-          // Create new file in appDataFolder
-          const createRes = await drive.files.create({
-            requestBody: {
-              name: 'BaseBackup.json',
-              parents: ['appDataFolder']
-            },
-            media,
-          });
-          driveLocation = `google_drive/appDataFolder/BaseBackup.json?id=${createRes.data.id}`;
-          console.log('[Sync] Created new BaseBackup.json on Google Drive');
-        }
-      } catch (gDriveError) {
-        console.error('[Sync] Google Drive backup upload failed, falling back to database only:', gDriveError);
-        driveLocation = 'local_database/fallback_due_to_drive_error';
-      }
-    } else {
-      if (isMock) {
-        driveLocation = `mock_drive/appDataFolder/BaseBackup.json`;
-        console.log('[Sync] Running in Mock/Offline Google Drive backup mode');
-      }
+      );
+      driveLocation = uploadResult.driveLocation;
+    } catch (uploadError) {
+      console.error('[Sync] Cloud backup upload failed, falling back to database only:', uploadError);
+      driveLocation = 'local_database/fallback_due_to_storage_error';
     }
 
-    // Log manifest
+    // 3. Log manifest
     await query(
       `INSERT INTO backup_manifests (user_id, backup_date, item_count, total_size_bytes, drive_location, status)
        VALUES ($1, CURRENT_TIMESTAMP, $2, $3, $4, $5)`,

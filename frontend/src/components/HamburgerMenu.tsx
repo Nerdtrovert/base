@@ -6,7 +6,7 @@ import {
   Menu, X, Cloud, Plus, Trash2, Folder, Calendar, 
   ArrowRight, ChevronLeft, ChevronRight, CheckSquare, 
   Check, HardDrive, LogIn, LogOut, User as UserIcon,
-  Bell, BellOff
+  Bell, BellOff, Info
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -151,7 +151,7 @@ export const HamburgerMenu: React.FC = () => {
         onClick={() => setIsOpen(true)}
         variant="ghost"
         size="icon"
-        className="h-10 w-10 text-text-primary hover:bg-bg-app rounded-xl"
+        className="h-10 w-10 text-text-primary hover:bg-bg-app rounded-xl cursor-pointer"
         title="Open Navigation Menu"
       >
         <Menu className="w-5 h-5 text-accent" />
@@ -240,7 +240,7 @@ export const HamburgerMenu: React.FC = () => {
                   {/* 1. Projects Section */}
                   <div className="space-y-3">
                     <div className="flex items-center justify-between text-[10px] font-bold text-text-secondary uppercase tracking-[0.2em]">
-                      <span>MY PROJECTS</span>
+                      <span>WORKSPACES</span>
                       <button 
                         onClick={() => {
                           setIsOpen(false);
@@ -272,7 +272,7 @@ export const HamburgerMenu: React.FC = () => {
                   {/* 2. Calendar Link */}
                   <div className="space-y-3">
                     <div className="text-[10px] font-bold text-text-secondary uppercase tracking-[0.2em]">
-                      <span>CALENDAR</span>
+                      <span>COMING UP</span>
                     </div>
                     <button
                       onClick={() => {
@@ -292,7 +292,7 @@ export const HamburgerMenu: React.FC = () => {
                   {/* 3. Google Drive Multi-Accounts Section */}
                   <div className="space-y-4">
                     <div className="text-[10px] font-bold text-text-secondary uppercase tracking-[0.2em]">
-                      <span>GOOGLE DRIVE SYNC</span>
+                      <span>SYNCED</span>
                     </div>
 
                     {/* Connected accounts list */}
@@ -344,7 +344,7 @@ export const HamburgerMenu: React.FC = () => {
                       {connectedDriveAccounts.length === 0 && (
                         <div className="text-center py-4 border border-dashed border-border-color rounded-xl bg-bg-app/20">
                           <Cloud className="w-5 h-5 mx-auto text-text-secondary/50 mb-1" />
-                          <p className="text-[10px] text-text-secondary px-4">Connect Google Drive accounts to backup and sync your base.</p>
+                          <p className="text-[10px] text-text-secondary px-4">Connect backup accounts to backup and sync your base.</p>
                         </div>
                       )}
                     </div>
@@ -359,7 +359,7 @@ export const HamburgerMenu: React.FC = () => {
                         className="w-full gap-2 border-dashed border-border-color hover:border-accent/50 text-[11px] text-text-secondary"
                       >
                         <Plus className="w-3.5 h-3.5" />
-                        <span>Connect Google Drive</span>
+                        <span>Enable Sync</span>
                       </Button>
                     ) : (
                       <form onSubmit={handleAddDrive} className="flex flex-col gap-2 mt-2">
@@ -399,7 +399,7 @@ export const HamburgerMenu: React.FC = () => {
                   {/* 4. Notifications Setup Section */}
                   <div className="space-y-3">
                     <div className="text-[10px] font-bold text-text-secondary uppercase tracking-[0.2em]">
-                      <span>SYSTEM NOTIFICATIONS</span>
+                      <span>NOTIFICATIONS</span>
                     </div>
 
                     <div className="p-3.5 rounded-xl border border-border-color bg-bg-app/20 flex flex-col gap-2.5">
@@ -454,6 +454,26 @@ export const HamburgerMenu: React.FC = () => {
                       )}
                     </div>
                   </div>
+
+                  {/* 5. About Link */}
+                  <div className="space-y-3 pt-2">
+                    <div className="text-[10px] font-bold text-text-secondary uppercase tracking-[0.2em]">
+                      <span>ABOUT</span>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setIsOpen(false);
+                        navigate('/about');
+                      }}
+                      className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl border border-border-color bg-bg-app/40 hover:bg-bg-app text-left transition-colors cursor-pointer"
+                    >
+                      <div className="flex items-center gap-3 text-xs font-medium text-text-primary">
+                        <Info className="w-4 h-4 text-accent" />
+                        <span>About Base Workspace</span>
+                      </div>
+                      <ArrowRight className="w-3.5 h-3.5 text-text-secondary" />
+                    </button>
+                  </div>
                 </div>
 
                 {/* Drawer Footer with Logout button */}
@@ -494,7 +514,7 @@ export const HamburgerMenu: React.FC = () => {
                   animate={{ opacity: 1, scale: 1, y: 0 }}
                   exit={{ opacity: 0, scale: 0.95, y: 15 }}
                   transition={{ type: 'spring', damping: 25, stiffness: 350 }}
-                  className="w-full max-w-2xl bg-card-bg border border-border-color rounded-3xl p-6 md:p-8 shadow-2xl relative z-10 overflow-hidden max-h-[85vh] flex flex-col"
+                  className="w-full max-w-2xl bg-card-bg border border-border-color rounded-[28px] p-6 md:p-8 shadow-2xl relative z-10 overflow-hidden max-h-[85vh] flex flex-col"
                 >
                   <div className="flex items-center justify-between mb-6 pb-4 border-b border-border-color">
                     <div className="flex items-center gap-2">
@@ -520,7 +540,7 @@ export const HamburgerMenu: React.FC = () => {
                       <div 
                         key={ws.id}
                         onClick={() => selectProject(ws.id)}
-                        className="p-5 rounded-2xl border border-border-color bg-bg-app/30 hover:bg-bg-app/90 hover:border-accent/40 cursor-pointer transition-all flex flex-col justify-between h-32 text-left group"
+                        className="p-5 rounded-[28px] border border-border-color bg-bg-app/30 hover:bg-bg-app/90 hover:border-accent/40 cursor-pointer transition-all flex flex-col justify-between h-32 text-left group"
                       >
                         <div>
                           <h4 className="font-bold text-text-primary text-sm truncate group-hover:text-accent transition-colors">
@@ -540,7 +560,7 @@ export const HamburgerMenu: React.FC = () => {
                     ))}
 
                     {allWorkspaces.length === 0 && (
-                      <div className="col-span-2 text-center py-12 border border-dashed border-border-color rounded-2xl bg-bg-app/20">
+                      <div className="col-span-2 text-center py-12 border border-dashed border-border-color rounded-[28px] bg-bg-app/20">
                         <Folder className="w-8 h-8 mx-auto text-text-secondary/40 mb-2" />
                         <p className="text-sm text-text-primary font-semibold">Your Project Drawer is Empty</p>
                         <p className="text-xs text-text-secondary mt-1">Create your first Workspace from the Home screen.</p>
@@ -570,7 +590,7 @@ export const HamburgerMenu: React.FC = () => {
                   animate={{ opacity: 1, scale: 1, y: 0 }}
                   exit={{ opacity: 0, scale: 0.95, y: 15 }}
                   transition={{ type: 'spring', damping: 25, stiffness: 350 }}
-                  className="w-full max-w-xl bg-card-bg border border-border-color rounded-3xl p-6 md:p-8 shadow-2xl relative z-10 overflow-hidden flex flex-col"
+                  className="w-full max-w-xl bg-card-bg border border-border-color rounded-[28px] p-6 md:p-8 shadow-2xl relative z-10 overflow-hidden flex flex-col"
                 >
                   {/* Header */}
                   <div className="flex items-center justify-between mb-6 pb-4 border-b border-border-color">

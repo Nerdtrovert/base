@@ -5,7 +5,6 @@ import { useBaseStore } from '../store/useBaseStore';
 import { CheckSquare, Square, Plus, Trash2 } from 'lucide-react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
-import { Card, CardContent, CardTitle } from './ui/card';
 import { motion, AnimatePresence } from 'framer-motion';
 
 export const TaskDashboard: React.FC = () => {
@@ -99,103 +98,104 @@ export const TaskDashboard: React.FC = () => {
   };
 
   return (
-    <Card>
-      <CardContent className="p-5 space-y-6">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <CardTitle>Tasks</CardTitle>
+    <div className="pb-6 border-b border-border-color space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2 text-xs font-semibold tracking-[0.18em] text-text-secondary uppercase">
+          <CheckSquare className="w-4 h-4 text-accent" />
+          <span>Today's Tasks</span>
         </div>
+      </div>
 
-        {/* Task Quick Add Form */}
-        <form onSubmit={handleAddTaskSubmit} className="flex flex-col gap-2 p-2.5 bg-bg-app/50 border border-border-color rounded-xl">
-          <Input
-            placeholder="Add a task..."
-            value={newTitle}
-            onChange={(e) => setNewTitle(e.target.value)}
-            className="w-full bg-transparent border-none shadow-none p-1 focus-visible:ring-0 focus-visible:border-none"
-          />
-          <div className="flex items-center justify-between mt-1 pt-1.5 border-t border-border-color/60">
-            <div className="flex gap-1.5">
-              <Button
-                type="button"
-                variant={targetDay === 'today' ? 'secondary' : 'ghost'}
-                size="sm"
-                onClick={() => setTargetDay('today')}
-                className="h-6 px-2.5 text-[10px]"
-              >
-                Today
-              </Button>
-              <Button
-                type="button"
-                variant={targetDay === 'tomorrow' ? 'secondary' : 'ghost'}
-                size="sm"
-                onClick={() => setTargetDay('tomorrow')}
-                className="h-6 px-2.5 text-[10px]"
-              >
-                Tomorrow
-              </Button>
-              <Button
-                type="button"
-                variant={targetDay === 'week' ? 'secondary' : 'ghost'}
-                size="sm"
-                onClick={() => setTargetDay('week')}
-                className="h-6 px-2.5 text-[10px]"
-              >
-                Next 7d
-              </Button>
-            </div>
-
+      {/* Task Quick Add Form */}
+      <form onSubmit={handleAddTaskSubmit} className="flex flex-col gap-2 p-2.5 bg-bg-app/50 border border-border-color rounded-[28px]">
+        <Input
+          placeholder="Add a task..."
+          value={newTitle}
+          onChange={(e) => setNewTitle(e.target.value)}
+          className="w-full bg-transparent border-none shadow-none p-1 focus-visible:ring-0 focus-visible:border-none"
+        />
+        <div className="flex items-center justify-between mt-1 pt-1.5 border-t border-border-color/60">
+          <div className="flex gap-1.5">
             <Button
-              type="submit"
-              disabled={!newTitle.trim()}
-              size="icon"
-              className="h-7 w-7 rounded-lg"
+              type="button"
+              variant={targetDay === 'today' ? 'secondary' : 'ghost'}
+              size="sm"
+              onClick={() => setTargetDay('today')}
+              className="h-6 px-2.5 text-[10px]"
             >
-              <Plus className="w-3.5 h-3.5" />
+              Today
+            </Button>
+            <Button
+              type="button"
+              variant={targetDay === 'tomorrow' ? 'secondary' : 'ghost'}
+              size="sm"
+              onClick={() => setTargetDay('tomorrow')}
+              className="h-6 px-2.5 text-[10px]"
+            >
+              Tomorrow
+            </Button>
+            <Button
+              type="button"
+              variant={targetDay === 'week' ? 'secondary' : 'ghost'}
+              size="sm"
+              onClick={() => setTargetDay('week')}
+              className="h-6 px-2.5 text-[10px]"
+            >
+              Next 7d
             </Button>
           </div>
-        </form>
 
-        {/* Sections */}
-        <div className="space-y-4">
-          {/* Today */}
-          <div className="space-y-1">
-            <h4 className="text-xs font-semibold text-text-secondary flex items-center gap-1.5 px-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-accent" />
-              Today
-            </h4>
-            {renderTaskList(todayTasks, 'Nothing on the slate for today.')}
-          </div>
-
-          {/* Tomorrow */}
-          <div className="space-y-1">
-            <h4 className="text-xs font-semibold text-text-secondary flex items-center gap-1.5 px-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-accent/60" />
-              Tomorrow
-            </h4>
-            {renderTaskList(tomorrowTasks, 'Clear for tomorrow.')}
-          </div>
-
-          {/* Next 7 Days */}
-          <div className="space-y-1">
-            <h4 className="text-xs font-semibold text-text-secondary flex items-center gap-1.5 px-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-border-color" />
-              Next 7 Days
-            </h4>
-            {renderTaskList(next7DaysTasks, 'No tasks scheduled in the next week.')}
-          </div>
-
-          {/* Recently Completed */}
-          {completedTasks.length > 0 && (
-            <div className="space-y-1 border-t border-dashed border-border-color/80 pt-3">
-              <h4 className="text-xs font-semibold text-text-secondary flex items-center gap-1.5 px-1">
-                Recently Completed
-              </h4>
-              {renderTaskList(completedTasks, '')}
-            </div>
-          )}
+          <Button
+            type="submit"
+            disabled={!newTitle.trim()}
+            size="icon"
+            className="h-7 w-7 rounded-lg"
+          >
+            <Plus className="w-3.5 h-3.5" />
+          </Button>
         </div>
-      </CardContent>
-    </Card>
+      </form>
+
+      {/* Sections */}
+      <div className="space-y-4">
+        {/* Today */}
+        <div className="space-y-1">
+          <h4 className="text-xs font-semibold text-text-secondary flex items-center gap-1.5 px-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-accent" />
+            Today
+          </h4>
+          {renderTaskList(todayTasks, 'Nothing on the slate for today.')}
+        </div>
+
+        {/* Tomorrow */}
+        <div className="space-y-1">
+          <h4 className="text-xs font-semibold text-text-secondary flex items-center gap-1.5 px-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-accent/60" />
+            Tomorrow
+          </h4>
+          {renderTaskList(tomorrowTasks, 'Clear for tomorrow.')}
+        </div>
+
+        {/* Next 7 Days */}
+        <div className="space-y-1">
+          <h4 className="text-xs font-semibold text-text-secondary flex items-center gap-1.5 px-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-border-color" />
+            Next 7 Days
+          </h4>
+          {renderTaskList(next7DaysTasks, 'No tasks scheduled in the next week.')}
+        </div>
+
+        {/* Recently Completed */}
+        {completedTasks.length > 0 && (
+          <div className="space-y-1 border-t border-dashed border-border-color/80 pt-3">
+            <h4 className="text-xs font-semibold text-text-secondary flex items-center gap-1.5 px-1">
+              Recently Completed
+            </h4>
+            {renderTaskList(completedTasks, '')}
+          </div>
+        )}
+      </div>
+    </div>
   );
 };

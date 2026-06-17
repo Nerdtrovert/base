@@ -29,6 +29,29 @@ export const AuthCallback: React.FC = () => {
           setStatus('error');
           setErrorMessage('Failed to resolve authenticated session.');
         }
+      } else if (authStatus === 'gdrive_signup') {
+        const email = searchParams.get('email') || '';
+        const name = searchParams.get('name') || '';
+        const google_id = searchParams.get('google_id') || '';
+        const picture = searchParams.get('picture') || '';
+        const access_token = searchParams.get('access_token') || '';
+        const refresh_token = searchParams.get('refresh_token') || '';
+        const scope = searchParams.get('scope') || '';
+        const expiry_date = searchParams.get('expiry_date') || '';
+
+        navigate('/login', {
+          state: {
+            gdriveSignup: true,
+            email,
+            name,
+            google_id,
+            picture,
+            access_token,
+            refresh_token,
+            scope,
+            expiry_date
+          }
+        });
       } else if (authStatus === 'error' || err) {
         setStatus('error');
         setErrorMessage(err || 'Google authorization declined.');
@@ -52,7 +75,7 @@ export const AuthCallback: React.FC = () => {
             Synchronizing memory layers...
           </h2>
           <p className="text-sm text-text-secondary">
-            Connecting your Google Drive sync container.
+            Connecting your cloud sync container.
           </p>
         </div>
       )}

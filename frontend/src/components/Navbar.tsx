@@ -1,7 +1,7 @@
 import React from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useBaseStore } from '../store/useBaseStore';
-import { Search, Cloud, CloudOff, RefreshCw, LogIn, LogOut, Clock } from 'lucide-react';
+import { Search, LogIn, LogOut, Sun, Moon } from 'lucide-react';
 import { Button } from './ui/button';
 import { HamburgerMenu } from './HamburgerMenu';
 import { BrandMark } from './BrandMark';
@@ -18,6 +18,32 @@ export const Navbar: React.FC = () => {
     setActiveWorkspaceId
   } = useBaseStore();
   const navigate = useNavigate();
+  const location = useLocation();
+  const isHomePage = location.pathname === '/';
+
+  const [theme, setTheme] = React.useState<'light' | 'dark'>(() => {
+    if (typeof window !== 'undefined') {
+      return document.documentElement.classList.contains('dark') ? 'dark' : 'light';
+    }
+    return 'light';
+  });
+
+  React.useEffect(() => {
+    const currentTheme = document.documentElement.classList.contains('dark') ? 'dark' : 'light';
+    setTheme(currentTheme);
+  }, []);
+
+  const toggleTheme = () => {
+    const nextTheme = theme === 'light' ? 'dark' : 'light';
+    setTheme(nextTheme);
+    if (nextTheme === 'dark') {
+      document.documentElement.classList.add('dark');
+      localStorage.setItem('theme', 'dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+      localStorage.setItem('theme', 'light');
+    }
+  };
 
   const handleLogoClick = () => {
     setActiveWorkspaceId(null);
@@ -26,7 +52,7 @@ export const Navbar: React.FC = () => {
 
   const getSyncTooltip = () => {
     if (!isAuthenticated) return 'Sync disabled. Log in to enable.';
-    if (syncStatus === 'syncing') return 'Syncing with Google Drive...';
+    if (syncStatus === 'syncing') return 'Syncing...';
     if (syncStatus === 'success') {
       return `Synced! Last backup: ${lastSynced ? new Date(lastSynced).toLocaleTimeString() : 'now'}`;
     }
@@ -59,56 +85,66 @@ export const Navbar: React.FC = () => {
           {isAuthenticated && (
             <button
               onClick={() => navigate('/timeline')}
-              className="ml-6 hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-border-color bg-bg-app/50 hover:bg-bg-app text-xs font-semibold text-text-secondary hover:text-accent cursor-pointer transition-colors"
+              className="ml-6 hidden md:inline-block text-xs font-normal text-text-secondary hover:text-accent hover:underline cursor-pointer bg-transparent border-none p-0"
             >
-              <Clock className="w-3.5 h-3.5" />
-              <span>Timeline</span>
+              Timeline
             </button>
           )}
+
+          {/* About Link (Desktop) */}
+          <button
+            onClick={() => navigate('/about')}
+            className="ml-4 hidden md:inline-block text-xs font-normal text-text-secondary hover:text-accent hover:underline cursor-pointer bg-transparent border-none p-0"
+          >
+            About
+          </button>
         </div>
 
         {/* Action Items */}
         <div className="flex items-center gap-4">
           {/* Spotlight Search Toggle */}
+          {!isHomePage && (
+            <Button
+              onClick={() => setSearchOpen(true)}
+              variant="outline"
+              size="sm"
+              className="gap-2 bg-bg-app font-normal text-text-secondary hidden sm:flex"
+              title="Search Everything"
+            >
+              <Search className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Search...</span>
+              <span className="font-mono text-[9px] opacity-90 bg-bg-app/70 border border-border-color/70 px-1 py-0.5 rounded">
+                  {typeof window !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.platform || navigator.userAgent) ? '⌘K' : 'Ctrl K'}
+                </span>
+            </Button>
+          )}
+
+          {/* Theme Toggle Button */}
           <Button
-            onClick={() => setSearchOpen(true)}
-            variant="outline"
-            size="sm"
-            className="gap-2 bg-bg-app font-medium text-text-secondary hidden sm:flex"
-            title="Search Everything"
+            onClick={toggleTheme}
+            variant="ghost"
+            size="icon"
+            className="h-9 w-9 text-text-secondary hover:bg-bg-app rounded-xl cursor-pointer"
+            title={theme === 'light' ? 'Switch to Night Studio' : 'Switch to Quiet Notebook'}
           >
-            <Search className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Search...</span>
-            <span className="font-mono text-[9px] opacity-90 bg-bg-app/70 border border-border-color/70 px-1 py-0.5 rounded">
-                {typeof window !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.platform || navigator.userAgent) ? '⌘K' : 'Ctrl K'}
-              </span>
+            {theme === 'light' ? (
+              <Moon className="w-4 h-4 text-accent" />
+            ) : (
+              <Sun className="w-4 h-4 text-accent-warm" />
+            )}
           </Button>
 
-          {/* Sync Status Badge */}
-          <div 
-            className="relative cursor-help"
+          {/* Sync Status Button */}
+          <button 
+            className="text-xs font-normal text-text-secondary hover:text-accent hover:underline cursor-pointer bg-transparent border-none p-0"
             title={getSyncTooltip()}
           >
             {isAuthenticated ? (
-              <div className="flex items-center gap-1 bg-bg-app border border-border-color px-2.5 py-1.5 rounded-xl text-xs text-text-secondary font-medium">
-                {syncStatus === 'syncing' ? (
-                  <RefreshCw className="w-3.5 h-3.5 animate-spin text-accent" />
-                ) : syncStatus === 'error' ? (
-                  <CloudOff className="w-3.5 h-3.5 text-rose-500" />
-                ) : (
-                  <Cloud className="w-3.5 h-3.5 text-emerald-500" />
-                )}
-                <span className="hidden md:inline">
-                  {syncStatus === 'syncing' ? 'Syncing...' : syncStatus === 'error' ? 'Sync Error' : 'Cloud Saved'}
-                </span>
-              </div>
+              syncStatus === 'syncing' ? 'Syncing...' : syncStatus === 'error' ? 'Sync Error' : 'Saved'
             ) : (
-              <div className="flex items-center gap-1 bg-bg-app/40 border border-dashed border-border-color px-2.5 py-1.5 rounded-xl text-xs text-text-secondary font-medium">
-                <CloudOff className="w-3.5 h-3.5 opacity-60" />
-                <span className="hidden md:inline">Offline Mode</span>
-              </div>
+              'Offline'
             )}
-          </div>
+          </button>
 
           {/* Vertical Divider */}
           <div className="w-px h-6 bg-border-color" />
@@ -121,7 +157,7 @@ export const Navbar: React.FC = () => {
                   {user.name}
                 </div>
                 <div className="text-[9px] text-text-muted mt-0.5 font-mono">
-                  Google Drive sync
+                  Synced
                 </div>
               </div>
               <div className="relative group">

@@ -162,7 +162,7 @@ export const WorkspaceDetail: React.FC = () => {
     try {
       if (uploadToDrive && selectedDriveEmail) {
         setIsUploading(true);
-        showCompanionMessage('Uploading resource to Google Drive...', 'info');
+        showCompanionMessage('Uploading resource to cloud storage...', 'info');
 
         const response = await fetch(`${BACKEND_URL}/api/sync/drive/upload`, {
           method: 'POST',
@@ -203,7 +203,7 @@ export const WorkspaceDetail: React.FC = () => {
       setExtractedPdfText('');
       setUploadToDrive(false);
       setShowResourceForm(false);
-      showCompanionMessage('Resource added to workspace and Google Drive.', 'success');
+      showCompanionMessage('Resource added to workspace and synced.', 'success');
     } catch (err: any) {
       console.error(err);
       setIsUploading(false);
@@ -309,7 +309,7 @@ export const WorkspaceDetail: React.FC = () => {
                       )}
                       <div>
                         <label className="block text-[10px] font-bold text-text-secondary uppercase mb-1">
-                          {resType === 'drive' ? 'Google Drive Link / Doc ID' :
+                          {resType === 'drive' ? 'Synced Link / Doc ID' :
                            resType === 'pdf' ? 'PDF Link or Local Path' :
                            resType === 'file' ? 'File Link or File Path' :
                            'URL / Link'}
@@ -317,7 +317,7 @@ export const WorkspaceDetail: React.FC = () => {
                         <Input
                           type="text"
                           placeholder={
-                            resType === 'drive' ? 'https://drive.google.com/... or Doc ID' :
+                            resType === 'drive' ? 'Cloud Link or Doc ID' :
                             resType === 'pdf' ? 'https://... or /path/to/file.pdf' :
                             resType === 'file' ? 'https://... or C:\\projects\\notes.txt' :
                             'https://example.com/article'
@@ -349,13 +349,13 @@ export const WorkspaceDetail: React.FC = () => {
                         }}
                         className="rounded border-border-color text-accent focus:ring-accent"
                       />
-                      <span>☁️ Upload/Sync this resource to Google Drive</span>
+                      <span>☁️ Upload/Sync this resource to cloud storage</span>
                     </label>
 
                     {uploadToDrive && (
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-border-color/60 animate-fade-in">
                         <div>
-                          <label className="block text-[10px] font-bold text-text-secondary uppercase mb-1">Select GDrive Account</label>
+                          <label className="block text-[10px] font-bold text-text-secondary uppercase mb-1">Select Synced Account</label>
                           <select
                             value={selectedDriveEmail}
                             disabled={isUploading}

@@ -59,6 +59,17 @@ interface BaseState {
   login: () => Promise<void>;
   loginWithEmail: (email: string, password: string) => Promise<boolean>;
   registerWithEmail: (email: string, password: string, name: string) => Promise<boolean>;
+  registerWithGDrive: (params: {
+    email: string;
+    password: string;
+    name: string;
+    google_id: string;
+    picture: string;
+    access_token: string;
+    refresh_token: string;
+    scope: string;
+    expiry_date: string;
+  }) => Promise<boolean>;
   logout: () => Promise<void>;
   triggerSync: () => Promise<void>;
 
@@ -388,17 +399,59 @@ export const useBaseStore = create<BaseState>((set, get) => ({
         throw new Error(data.error || 'Registration failed');
       }
 
+      // Automatically invalidate the automatic registration session cookie to require manual login
+      try {
+        await fetch(`${BACKEND_URL}/api/auth/logout`, { 
+          method: 'POST',
+          credentials: 'include'
+        });
+      } catch (err) {
+        console.warn('Logout cleanup failed:', err);
+      }
+
       set({
-        isAuthenticated: true,
-        isMockAuth: false,
-        user: data.user,
+        isAuthenticated: false,
+        user: null,
         isAuthLoading: false
       });
-      get().showCompanionMessage(`Account created! Welcome, ${name}!`, 'success');
-      get().triggerSync();
+      get().showCompanionMessage(`Account created successfully!`, 'success');
       return true;
     } catch (error: any) {
       console.error('Email registration error:', error);
+      set({ isAuthLoading: false });
+      get().showCompanionMessage(error.message || 'Registration failed', 'warning');
+      return false;
+    }
+  },
+
+  registerWithGDrive: async (params) => {
+    set({ isAuthLoading: true });
+    try {
+      const deviceInfo = {
+        deviceId: crypto.randomUUID(),
+        name: navigator.userAgent.substring(0, 30),
+        type: 'web',
+        os: navigator.platform,
+        unique_identifier: 'web-fingerprint-' + window.screen.width + 'x' + window.screen.height
+      };
+
+      const response = await fetch(`${BACKEND_URL}/api/auth/register-gdrive`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...params, deviceInfo }),
+        credentials: 'include'
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Registration failed');
+      }
+
+      set({ isAuthLoading: false });
+      get().showCompanionMessage('Account registered successfully with Google Drive!', 'success');
+      return true;
+    } catch (error: any) {
+      console.error('GDrive registration error:', error);
       set({ isAuthLoading: false });
       get().showCompanionMessage(error.message || 'Registration failed', 'warning');
       return false;

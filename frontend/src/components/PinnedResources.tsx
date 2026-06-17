@@ -87,19 +87,19 @@ export const PinnedResources: React.FC<PinnedResourcesProps> = ({ workspaceId = 
   };
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold tracking-wider text-text-secondary uppercase">
-          {showAll ? 'Resources' : '📌 Pinned Resources'}
-        </h3>
+    <div className="pb-6 border-b border-border-color space-y-4">
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-2 text-xs font-semibold tracking-[0.18em] text-text-secondary uppercase">
+          <span>{showAll ? 'Resources' : 'Pinned Resources'}</span>
+        </div>
       </div>
 
       {resources.length === 0 ? (
-        <Card className="p-8 text-center text-xs text-text-secondary italic">
+        <div className="p-8 text-center text-xs text-text-secondary italic border border-border-color bg-card-bg/30 rounded-[28px]">
           {showAll 
             ? 'No resources attached. Drop a link or capture an idea with links.'
             : 'No pinned resources. Click the pin icon on any workspace resource to keep it here.'}
-        </Card>
+        </div>
       ) : (
         <motion.div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" layout>
           <AnimatePresence initial={false}>

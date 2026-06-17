@@ -117,7 +117,7 @@ export const SpotlightSearch: React.FC = () => {
         >
           <motion.div 
             ref={containerRef}
-            className="w-full max-w-2xl bg-card-bg border border-border-color rounded-2xl shadow-2xl overflow-hidden flex flex-col"
+            className="w-full max-w-2xl bg-card-bg border border-border-color rounded-[28px] shadow-2xl overflow-hidden flex flex-col"
             onKeyDown={handleKeyDown}
             initial={{ scale: 0.97, y: -8, opacity: 0 }}
             animate={{ scale: 1, y: 0, opacity: 1 }}

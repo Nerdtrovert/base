@@ -1,0 +1,20 @@
+.dark {
+  --bg-app: #090c12;
+  --bg-app-rgb: 9, 12, 18;
+  --bg-elevated: #0f131d;
+  --grid-line: rgba(97, 146, 225, 0.25);
+  --text-primary: #eff4fb;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+  --accent: #5e8be6;
+  --accent-strong: #729ded;
+  --accent-light: rgba(94, 139, 230, 0.12);
+  --accent-warm: #a68453;
+  --success: #10B981;
+  --brand-ink: #eff4fb;
+  --border-color: #192130;
+  --card-bg: rgba(15, 19, 29, 0.95);
+  --card-bg-soft: #121724;
+  --card-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  --paper-shadow: none;
+}

@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { useBaseStore } from '../store/useBaseStore';
-import { Image, Link as LinkIcon, Save, X, Lightbulb } from 'lucide-react';
+import { Image, Link as LinkIcon, X } from 'lucide-react';
 import { Button } from './ui/button';
 import { Textarea } from './ui/textarea';
 import { Input } from './ui/input';
@@ -8,23 +8,17 @@ import { motion, AnimatePresence } from 'framer-motion';
 
 export const QuickCapture: React.FC = () => {
   const { activeWorkspaceId, createCapture, showCompanionMessage } = useBaseStore();
-  const [isExpanded, setIsExpanded] = useState(false);
   const [content, setContent] = useState('');
   const [url, setUrl] = useState('');
   const [showUrlInput, setShowUrlInput] = useState(false);
   const [imageAttached, setImageAttached] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  const handleFocus = () => {
-    setIsExpanded(true);
-  };
-
   const handleCancel = () => {
     setContent('');
     setUrl('');
     setShowUrlInput(false);
     setImageAttached(null);
-    setIsExpanded(false);
   };
 
   const handleSave = async (e: React.FormEvent) => {
@@ -68,64 +62,96 @@ export const QuickCapture: React.FC = () => {
   };
 
   return (
-    <motion.div 
-      className="surface-paper relative overflow-hidden rounded-[1.9rem] border border-border-color"
-      layout
-      transition={{ type: "spring", stiffness: 400, damping: 30 }}
-    >
-      <form onSubmit={handleSave} className="p-5 md:p-6">
+    <div className="pb-6 border-b border-border-color">
+      <form onSubmit={handleSave} className="space-y-4">
         {/* Header */}
-        <AnimatePresence>
-          {isExpanded && (
-            <motion.div 
-              className="flex items-center justify-between mb-4 text-xs text-text-secondary font-medium"
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: "auto", opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
+        <div className="flex items-start justify-between">
+          <div className="space-y-0.5">
+            <h3 className="text-lg font-semibold text-text-primary">
+              What's on your mind?
+            </h3>
+            <p className="text-xs text-text-secondary leading-relaxed font-normal">
+              Capture now. Organize later.
+            </p>
+          </div>
+          {(content || url || imageAttached) ? (
+            <Button 
+              type="button" 
+              variant="ghost" 
+              size="icon"
+              onClick={handleCancel}
+              className="h-6 w-6 text-text-secondary hover:text-text-primary rounded-lg cursor-pointer"
+              title="Clear content"
             >
-              <span className="flex items-center gap-1.5 text-accent">
-                <Lightbulb className="w-3.5 h-3.5" />
-                💡 NEW IDEA {activeWorkspaceId ? '• IN WORKSPACE' : ''}
-              </span>
-              <Button 
-                type="button" 
-                variant="ghost" 
-                size="icon"
-                onClick={handleCancel}
-                className="h-6 w-6"
-              >
-                <X className="w-3.5 h-3.5" />
-              </Button>
-            </motion.div>
-          )}
-        </AnimatePresence>
+              <X className="w-3.5 h-3.5" />
+            </Button>
+          ) : null}
+        </div>
 
-        {/* Text Area using shadcn/ui */}
-        <Textarea
-          ref={textareaRef as any}
-          placeholder={isExpanded ? "What's on your mind?" : "💡 Had an idea? Quick capture here..."}
-          rows={isExpanded ? 8 : 3}
-          value={content}
-          onChange={(e) => setContent(e.target.value)}
-          onFocus={handleFocus}
-          className={`w-full border-none shadow-none bg-transparent p-0 text-base md:text-[15px] leading-7 focus-visible:ring-0 ${isExpanded ? 'min-h-[220px]' : 'min-h-[96px]'}`}
-        />
+        {/* Text Area with notebook ruled lines and liquid glass container containing actions locked on the last line */}
+        <div className="relative rounded-[28px] border border-border-color bg-card-bg/30 dark:bg-card-bg/10 backdrop-blur-md p-5 shadow-xs flex flex-col justify-between min-h-[220px]">
+          <div className="flex-grow">
+            <Textarea
+              ref={textareaRef as any}
+              placeholder="Jot down a quick thought, study note, or link reference..."
+              value={content}
+              onChange={(e) => setContent(e.target.value)}
+              className="w-full border-none shadow-none bg-transparent p-0 text-[15px] focus-visible:ring-0 min-h-[128px] notebook-ruled-lines placeholder:text-text-muted/70 font-sans"
+            />
+          </div>
+
+          {/* Locked Last Line - Actions inside the text box */}
+          <div className="flex items-center justify-between pt-4 mt-2 border-t border-border-color/40">
+            <div className="flex items-center gap-6">
+              <button
+                type="button"
+                onClick={handleAttachMockImage}
+                className={`cursor-pointer transition-colors p-1 rounded-lg ${
+                  imageAttached ? 'text-accent' : 'text-text-secondary hover:text-accent'
+                }`}
+                title="Add Image"
+              >
+                <Image className="w-5 h-5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowUrlInput(!showUrlInput)}
+                className={`cursor-pointer transition-colors p-1 rounded-lg ${
+                  url ? 'text-accent' : 'text-text-secondary hover:text-accent'
+                }`}
+                title="Add Link"
+              >
+                <LinkIcon className="w-5 h-5" />
+              </button>
+            </div>
+
+            <Button
+              type="submit"
+              disabled={!content.trim() && !url && !imageAttached}
+              size="sm"
+              className="flex items-center gap-1.5 shadow-sm shadow-accent/20 cursor-pointer h-8 px-4 rounded-xl font-semibold text-xs"
+            >
+              <span>Save</span>
+            </Button>
+          </div>
+        </div>
 
         {/* Link Input */}
         <AnimatePresence>
-          {isExpanded && showUrlInput && (
+          {showUrlInput && (
             <motion.div 
-              className="mt-4 py-3 border-t border-dashed border-border-color"
+              className="py-1"
               initial={{ height: 0, opacity: 0 }}
               animate={{ height: "auto", opacity: 1 }}
               exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.15 }}
             >
               <Input
                 type="url"
                 placeholder="Paste link address here (https://...)"
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
-                className="bg-bg-app"
+                className="bg-bg-app border-border-color text-xs h-9 rounded-xl"
                 autoFocus
               />
             </motion.div>
@@ -134,12 +160,13 @@ export const QuickCapture: React.FC = () => {
 
         {/* Image Attachment */}
         <AnimatePresence>
-          {isExpanded && imageAttached && (
+          {imageAttached && (
             <motion.div 
-              className="relative mt-4 rounded-xl overflow-hidden border border-border-color max-h-36 bg-bg-app"
+              className="relative rounded-[28px] overflow-hidden border border-border-color max-h-36 bg-bg-app"
               initial={{ height: 0, opacity: 0 }}
               animate={{ height: "auto", opacity: 1 }}
               exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.15 }}
             >
               <img 
                 src={imageAttached} 
@@ -149,57 +176,14 @@ export const QuickCapture: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setImageAttached(null)}
-                className="absolute top-1.5 right-1.5 p-1 rounded-full bg-black/60 text-white hover:bg-black/80 transition-colors"
+                className="absolute top-1.5 right-1.5 p-1 rounded-full bg-black/60 text-white hover:bg-black/80 transition-colors cursor-pointer"
               >
                 <X className="w-3 h-3" />
               </button>
             </motion.div>
           )}
         </AnimatePresence>
-
-        {/* Actions Footer */}
-        <AnimatePresence>
-          {isExpanded && (
-            <motion.div 
-              className="flex items-center justify-between mt-4 pt-4 border-t border-border-color"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-            >
-              <div className="flex items-center gap-1.5">
-                <Button
-                  type="button"
-                  variant={imageAttached ? "secondary" : "outline"}
-                  size="sm"
-                  onClick={handleAttachMockImage}
-                >
-                  <Image className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">Add Image</span>
-                </Button>
-                <Button
-                  type="button"
-                  variant={url ? "secondary" : "outline"}
-                  size="sm"
-                  onClick={() => setShowUrlInput(!showUrlInput)}
-                >
-                  <LinkIcon className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">Add Link</span>
-                </Button>
-              </div>
-
-              <Button
-                type="submit"
-                disabled={!content.trim() && !url && !imageAttached}
-                size="sm"
-                className="flex items-center gap-1.5 shadow-sm shadow-accent/20"
-              >
-                <Save className="w-3.5 h-3.5" />
-                <span>Save</span>
-              </Button>
-            </motion.div>
-          )}
-        </AnimatePresence>
       </form>
-    </motion.div>
+    </div>
   );
 };

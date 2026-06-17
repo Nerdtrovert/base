@@ -1,8 +1,7 @@
 import React from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../services/db';
-import { MessageSquare, Link, Image, CheckCircle, FileText, Trash2 } from 'lucide-react';
-import { Card, CardContent } from './ui/card';
+import { MessageSquare, Link, Image, CheckCircle, FileText, Trash2, Clock } from 'lucide-react';
 import { Button } from './ui/button';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -117,101 +116,103 @@ export const RecentActivity: React.FC = () => {
   };
 
   return (
-    <Card>
-      <CardContent className="p-5">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-sm font-semibold tracking-wider text-text-secondary uppercase">
-            Timeline Memory
-          </h3>
+    <div className="pb-6 border-b border-border-color">
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2 text-xs font-semibold tracking-[0.18em] text-text-secondary uppercase">
+          <Clock className="w-4 h-4 text-accent" />
+          <span>Recent Activity</span>
         </div>
+      </div>
 
-        {activityItems.length === 0 ? (
-          <div className="py-8 text-center text-xs text-text-secondary italic">
-            No memory records yet. Speak your mind or add a task to begin.
-          </div>
-        ) : (
-          <motion.div className="space-y-6" layout>
-            <AnimatePresence initial={false}>
-              {Object.entries(groupedActivity).map(([dateLabel, items]) => (
-                <motion.div 
-                  key={dateLabel} 
-                  className="space-y-3"
-                  layout
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                >
-                  {/* Date Header */}
-                  <h4 className="text-[11px] font-bold text-text-secondary uppercase tracking-wider pl-1.5 border-l-2 border-accent/40">
-                    {dateLabel}
-                  </h4>
+      {activityItems.length === 0 ? (
+        <div className="py-8 text-center text-xs text-text-secondary italic">
+          No memory records yet. Speak your mind or add a task to begin.
+        </div>
+      ) : (
+        <motion.div className="space-y-6" layout>
+          <AnimatePresence initial={false}>
+            {Object.entries(groupedActivity).map(([dateLabel, items]) => (
+              <motion.div 
+                key={dateLabel} 
+                className="space-y-3"
+                layout
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+              >
+                {/* Date Header */}
+                <h4 className="text-[11px] font-semibold text-text-secondary uppercase tracking-wider pl-1.5 border-l-2 border-accent/40">
+                  {dateLabel}
+                </h4>
 
-                  {/* Items under this day */}
-                  <div className="relative pl-3 space-y-3 border-l border-border-color/60 ml-1.5">
-                    {items.map(item => (
-                      <motion.div 
-                        key={item.id}
-                        className="relative flex items-start justify-between gap-3 group rounded-xl px-1.5 py-1 hover:bg-accent-light/20 transition-colors"
-                        layout
-                        initial={{ opacity: 0, x: -5 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        exit={{ opacity: 0, x: 15, height: 0, overflow: 'hidden', margin: 0, padding: 0 }}
-                        transition={{ duration: 0.15 }}
-                      >
-                        {/* Bullet marker */}
-                        <div className="absolute -left-[16.5px] top-1.5 w-2 h-2 rounded-full border border-border-color bg-card-bg group-hover:border-accent transition-colors" />
+                <div className="space-y-3 relative border-l border-border-color/70 pl-3.5 ml-1.5 pt-1">
+                  {items.map((item) => (
+                    <motion.div
+                      key={item.id}
+                      layout
+                      initial={{ opacity: 0, y: -5 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, scale: 0.95 }}
+                      transition={{ duration: 0.15 }}
+                      className="relative flex items-start justify-between gap-3 group rounded-xl px-1.5 py-1 hover:bg-accent-light/20 transition-colors"
+                    >
+                      {/* Timeline dot */}
+                      <div className="absolute -left-[20px] top-2 w-2 h-2 rounded-full border border-border-color bg-bg-app group-hover:border-accent transition-colors" />
 
-                        <div className="flex items-start gap-2.5 min-w-0">
-                          <div className="mt-0.5 text-text-secondary p-1 rounded-md bg-bg-app border border-border-color/50">
-                            {getIcon(item.type)}
-                          </div>
-                          <div className="min-w-0">
-                            {item.url ? (
-                              <a 
-                                href={item.url} 
-                                target="_blank" 
-                                rel="noopener noreferrer" 
-                                className="text-sm text-text-primary hover:text-accent font-medium break-all flex items-center gap-1 inline-flex"
-                              >
-                                {item.title}
-                              </a>
-                            ) : (
-                              <p className="text-sm text-text-primary font-medium break-words leading-relaxed">
-                                {item.title}
-                              </p>
-                            )}
-                            {item.subtitle && (
-                              <span className="text-[10px] text-text-secondary block font-mono mt-0.5">
-                                {item.subtitle}
-                              </span>
-                            )}
-                            <span className="text-[10px] text-text-secondary block font-sans mt-0.5">
-                              {new Date(item.timestamp).toLocaleTimeString(undefined, {
-                                hour: '2-digit',
-                                minute: '2-digit'
-                              })}
-                            </span>
-                          </div>
+                      <div className="flex items-start gap-2.5 min-w-0 flex-grow">
+                        <div className="mt-0.5 text-text-secondary p-1 rounded-md bg-bg-app border border-border-color/50">
+                          {getIcon(item.type)}
                         </div>
 
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => handleDeleteItem(item)}
-                          className="h-7 w-7 text-text-secondary hover:text-rose-500 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 flex-shrink-0"
-                          aria-label="Remove item"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </Button>
-                      </motion.div>
-                    ))}
-                  </div>
-                </motion.div>
-              ))}
-            </AnimatePresence>
-          </motion.div>
-        )}
-      </CardContent>
-    </Card>
+                        <div className="min-w-0 flex-grow">
+                          {item.type === 'resource-added' ? (
+                            <a
+                              href={item.url ? (item.url.startsWith('http') ? item.url : `https://${item.url}`) : '#'}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-sm text-text-primary hover:text-accent font-normal break-all flex items-center gap-1 inline-flex hover:underline"
+                            >
+                              {item.title}
+                            </a>
+                          ) : (
+                            <p className="text-sm text-text-primary font-normal break-words leading-relaxed">
+                              {item.title}
+                            </p>
+                          )}
+
+                          <div className="flex items-center gap-2 mt-1 text-[10px] text-text-muted">
+                            <span className="font-mono">
+                              {new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                            {item.subtitle && (
+                              <>
+                                <span>•</span>
+                                <span className="truncate max-w-[150px]">
+                                  {item.subtitle}
+                                </span>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleDeleteItem(item)}
+                        className="h-7 w-7 text-text-secondary hover:text-rose-500 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 flex-shrink-0"
+                        aria-label="Remove item"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </Button>
+                    </motion.div>
+                  ))}
+                </div>
+              </motion.div>
+            ))}
+          </AnimatePresence>
+        </motion.div>
+      )}
+    </div>
   );
 };

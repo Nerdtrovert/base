@@ -1,0 +1,20 @@
+:root {
+  --bg-app: #F8F8F6;
+  --bg-app-rgb: 248, 248, 246;
+  --bg-elevated: #FFFFFF;
+  --grid-line: rgba(37, 99, 235, 0.08);
+  --text-primary: #1E1E1E;
+  --text-secondary: #6B7280;
+  --text-muted: #8E939E;
+  --accent: #2563EB;
+  --accent-strong: #1D4ED8;
+  --accent-light: rgba(37, 99, 235, 0.08);
+  --accent-warm: #F59E0B;
+  --success: #10B981;
+  --brand-ink: #1E1E1E;
+  --border-color: #E7E7E5;
+  --card-bg: #FFFFFF;
+  --card-bg-soft: #FFFFFF;
+  --card-shadow: 0 1px 3px rgba(0, 0, 0, 0.02), 0 1px 2px rgba(37, 99, 235, 0.01);
+  --paper-shadow: none;
+}
