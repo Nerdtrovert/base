@@ -15,7 +15,12 @@ declare global {
 
 // Authentication middleware
 export const authMiddleware = (req: Request, res: Response, next: NextFunction): void => {
-  const token = req.headers.authorization?.split('Bearer ')[1];
+  let token = req.headers.authorization?.split('Bearer ')[1];
+
+  // Fallback to cookie authentication if authorization header is missing
+  if (!token && req.cookies?.refreshToken) {
+    token = req.cookies.refreshToken;
+  }
 
   if (!token) {
     res.status(401).json({ error: 'Unauthorized' });

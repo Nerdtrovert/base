@@ -1,8 +1,10 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useBaseStore } from '../store/useBaseStore';
-import { Search, Cloud, CloudOff, RefreshCw, LogIn, LogOut } from 'lucide-react';
+import { Search, Cloud, CloudOff, RefreshCw, LogIn, LogOut, Clock } from 'lucide-react';
 import { Button } from './ui/button';
+import { HamburgerMenu } from './HamburgerMenu';
+import { BrandMark } from './BrandMark';
 
 
 export const Navbar: React.FC = () => {
@@ -12,7 +14,6 @@ export const Navbar: React.FC = () => {
     syncStatus, 
     lastSynced, 
     setSearchOpen, 
-    login, 
     logout,
     setActiveWorkspaceId
   } = useBaseStore();
@@ -37,18 +38,34 @@ export const Navbar: React.FC = () => {
     <nav className="border-b border-border-color bg-card-bg/80 backdrop-blur-md sticky top-0 z-40 transition-all duration-200">
       <div className="max-w-6xl mx-auto px-4 md:px-6 h-16 flex items-center justify-between">
         
-        {/* Logo */}
-        <button 
-          onClick={handleLogoClick}
-          className="flex items-center gap-2 cursor-pointer group"
-        >
-          <div className="w-8 h-8 rounded-xl bg-accent flex items-center justify-center text-white font-bold text-lg font-mono shadow-sm shadow-accent/20 group-hover:scale-95 transition-transform">
-            B
-          </div>
-          <span className="font-mono font-bold text-lg tracking-wider text-text-primary group-hover:text-accent transition-colors">
-            BASE
-          </span>
-        </button>
+        <div className="flex items-center gap-2">
+          {/* Hamburger Menu Toggle & Side Drawer */}
+          <HamburgerMenu />
+
+          {/* Logo */}
+          <button 
+            onClick={handleLogoClick}
+            className="flex items-center gap-3 cursor-pointer group"
+          >
+            <div className="hero-brand-glow">
+              <BrandMark className="h-9 w-9 transition-transform duration-200 group-hover:scale-[0.97]" />
+            </div>
+            <span className="font-mono font-bold text-lg tracking-[0.38em] text-brand-ink group-hover:text-accent transition-colors">
+              BASE
+            </span>
+          </button>
+
+          {/* Timeline Link (Desktop) */}
+          {isAuthenticated && (
+            <button
+              onClick={() => navigate('/timeline')}
+              className="ml-6 hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-border-color bg-bg-app/50 hover:bg-bg-app text-xs font-semibold text-text-secondary hover:text-accent cursor-pointer transition-colors"
+            >
+              <Clock className="w-3.5 h-3.5" />
+              <span>Timeline</span>
+            </button>
+          )}
+        </div>
 
         {/* Action Items */}
         <div className="flex items-center gap-4">
@@ -57,14 +74,14 @@ export const Navbar: React.FC = () => {
             onClick={() => setSearchOpen(true)}
             variant="outline"
             size="sm"
-            className="gap-2 bg-bg-app font-medium text-text-secondary"
+            className="gap-2 bg-bg-app font-medium text-text-secondary hidden sm:flex"
             title="Search Everything"
           >
             <Search className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">Search...</span>
-            <span className="font-mono text-[9px] opacity-60 bg-black/5 dark:bg-white/5 px-1 py-0.5 rounded">
-              ⌘K
-            </span>
+            <span className="font-mono text-[9px] opacity-90 bg-bg-app/70 border border-border-color/70 px-1 py-0.5 rounded">
+                {typeof window !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.platform || navigator.userAgent) ? '⌘K' : 'Ctrl K'}
+              </span>
           </Button>
 
           {/* Sync Status Badge */}
@@ -103,7 +120,7 @@ export const Navbar: React.FC = () => {
                 <div className="text-xs font-semibold text-text-primary leading-none">
                   {user.name}
                 </div>
-                <div className="text-[9px] text-text-secondary mt-0.5 font-mono">
+                <div className="text-[9px] text-text-muted mt-0.5 font-mono">
                   Google Drive sync
                 </div>
               </div>
@@ -132,13 +149,13 @@ export const Navbar: React.FC = () => {
             </div>
           ) : (
             <Button
-              onClick={login}
+              onClick={() => navigate('/login')}
               variant="secondary"
               size="sm"
               className="gap-1.5"
             >
               <LogIn className="w-3.5 h-3.5" />
-              <span>Connect Drive</span>
+              <span>Log In</span>
             </Button>
           )}
 

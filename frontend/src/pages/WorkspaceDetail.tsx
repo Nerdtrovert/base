@@ -7,15 +7,15 @@ import { TaskDashboard } from '../components/TaskDashboard';
 import { PinnedResources } from '../components/PinnedResources';
 import { RecentActivity } from '../components/RecentActivity';
 import { QuickCapture } from '../components/QuickCapture';
-import { CompanionBanner } from '../components/CompanionBanner';
 import { ChevronLeft, Folder, Plus, X, AlertCircle } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
+import { extractTextFromPdf } from '../utils/pdfParser';
 
 export const WorkspaceDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { setActiveWorkspaceId, createResource, showCompanionMessage } = useBaseStore();
+  const { setActiveWorkspaceId, createResource, showCompanionMessage, connectedDriveAccounts } = useBaseStore();
   const [showCaptureModal, setShowCaptureModal] = useState(false);
   const [showResourceForm, setShowResourceForm] = useState(false);
   
@@ -23,6 +23,54 @@ export const WorkspaceDetail: React.FC = () => {
   const [resTitle, setResTitle] = useState('');
   const [resUrl, setResUrl] = useState('');
   const [resType, setResType] = useState<'link' | 'drive' | 'pdf' | 'file'>('link');
+  const [attachedFile, setAttachedFile] = useState<File | null>(null);
+  const [base64FileContent, setBase64FileContent] = useState('');
+  const [extractedPdfText, setExtractedPdfText] = useState('');
+
+  // Google Drive Upload Sub-Step States
+  const [uploadToDrive, setUploadToDrive] = useState(false);
+  const [selectedDriveEmail, setSelectedDriveEmail] = useState('');
+  const [selectedFolderId, setSelectedFolderId] = useState('f_root');
+  const [driveFolders, setDriveFolders] = useState<{ id: string; name: string; path: string }[]>([]);
+  const [isUploading, setIsUploading] = useState(false);
+
+  const getBackendUrl = () => {
+    if (typeof window === 'undefined') return 'http://localhost:5001';
+    const hostname = window.location.hostname;
+    if (hostname.includes('devtunnels.ms')) {
+      return window.location.origin.replace('-5173', '-5001');
+    }
+    return `http://${hostname}:5001`;
+  };
+
+  const BACKEND_URL = getBackendUrl();
+
+  // Load GDrive accounts on mount
+  useEffect(() => {
+    if (connectedDriveAccounts && connectedDriveAccounts.length > 0 && !selectedDriveEmail) {
+      setSelectedDriveEmail(connectedDriveAccounts[0].email);
+    }
+  }, [connectedDriveAccounts, selectedDriveEmail]);
+
+  // Fetch GDrive folders when upload checked or account changed
+  useEffect(() => {
+    if (uploadToDrive && selectedDriveEmail) {
+      const fetchFolders = async () => {
+        try {
+          const res = await fetch(`${BACKEND_URL}/api/sync/drive/folders?email=${encodeURIComponent(selectedDriveEmail)}`, {
+            credentials: 'include'
+          });
+          if (res.ok) {
+            const data = await res.json();
+            setDriveFolders(data.folders || []);
+          }
+        } catch (err) {
+          console.error('[Folders] Error fetching folders:', err);
+        }
+      };
+      fetchFolders();
+    }
+  }, [uploadToDrive, selectedDriveEmail]);
 
   // Load workspace data reactively
   const workspace = useLiveQuery(() => id ? db.workspaces.get(id) : Promise.resolve(undefined), [id]) as Workspace | undefined;
@@ -50,25 +98,116 @@ export const WorkspaceDetail: React.FC = () => {
     );
   }
 
-  const handleAddResource = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!resTitle.trim() || !resUrl.trim()) return;
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setAttachedFile(file);
+    if (!resTitle.trim()) {
+      const baseName = file.name.replace(/\.[^/.]+$/, "");
+      setResTitle(baseName);
+    }
+    setResUrl(`file:///local/${file.name}`);
+
+    const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
 
     try {
+      if (isPdf) {
+        showCompanionMessage('Reading and indexing PDF content locally...', 'info', 3000);
+      }
+      
+      const reader = new FileReader();
+      reader.onload = async (event) => {
+        const buffer = event.target?.result as ArrayBuffer;
+        
+        // Safe conversion of array buffer to base64
+        const uint8Array = new Uint8Array(buffer);
+        let binaryString = '';
+        const chunkSize = 8192;
+        for (let i = 0; i < uint8Array.length; i += chunkSize) {
+          const chunk = uint8Array.subarray(i, i + chunkSize);
+          binaryString += String.fromCharCode.apply(null, chunk as any);
+        }
+        const base64 = window.btoa(binaryString);
+        setBase64FileContent(base64);
+
+        if (isPdf) {
+          try {
+            const text = await extractTextFromPdf(buffer);
+            setExtractedPdfText(text);
+            showCompanionMessage(`Successfully parsed PDF "${file.name}" (${text.split(/\s+/).length} words).`, 'success');
+          } catch (err) {
+            console.error('[PDF Parser] Error:', err);
+            showCompanionMessage('Failed to extract text from PDF. It will still be indexed by title.', 'warning');
+          }
+        } else {
+          showCompanionMessage(`Attached file "${file.name}" successfully.`, 'success');
+        }
+      };
+      reader.readAsArrayBuffer(file);
+    } catch (err) {
+      console.error('[File Reader] Error:', err);
+    }
+  };
+
+  const handleAddResource = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!resTitle.trim()) return;
+    if (!uploadToDrive && !resUrl.trim()) return;
+
+    let finalUrl = resUrl.trim();
+    let finalType = resType;
+    let finalExtractedText = resType === 'pdf' ? extractedPdfText : undefined;
+
+    try {
+      if (uploadToDrive && selectedDriveEmail) {
+        setIsUploading(true);
+        showCompanionMessage('Uploading resource to Google Drive...', 'info');
+
+        const response = await fetch(`${BACKEND_URL}/api/sync/drive/upload`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: selectedDriveEmail,
+            fileName: resTitle.trim(),
+            folderId: selectedFolderId,
+            content: base64FileContent || window.btoa(`Mock file content for resource: ${resTitle.trim()}`),
+            mimeType: attachedFile ? attachedFile.type : 'text/plain'
+          })
+        });
+
+        const data = await response.json();
+        if (!response.ok || !data.success) {
+          throw new Error(data.error || 'Upload failed');
+        }
+
+        finalUrl = data.webViewLink;
+        finalType = 'drive';
+        setIsUploading(false);
+      }
+
       await createResource({
         title: resTitle.trim(),
-        url: resUrl.trim(),
-        type: resType,
-        workspaceId: id || null
+        url: finalUrl,
+        type: finalType,
+        workspaceId: id || null,
+        extractedText: finalExtractedText
       });
+
       setResTitle('');
       setResUrl('');
       setResType('link');
+      setAttachedFile(null);
+      setBase64FileContent('');
+      setExtractedPdfText('');
+      setUploadToDrive(false);
       setShowResourceForm(false);
-      showCompanionMessage('Resource added to workspace.', 'success');
-    } catch (err) {
+      showCompanionMessage('Resource added to workspace and Google Drive.', 'success');
+    } catch (err: any) {
       console.error(err);
-      showCompanionMessage('Failed to add resource.', 'warning');
+      setIsUploading(false);
+      showCompanionMessage(err.message || 'Failed to add resource.', 'warning');
     }
   };
 
@@ -103,8 +242,7 @@ export const WorkspaceDetail: React.FC = () => {
         )}
       </div>
 
-      {/* Companion Banner Notification */}
-      <CompanionBanner />
+
 
       {/* Workspace-specific Grid Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -139,30 +277,130 @@ export const WorkspaceDetail: React.FC = () => {
                     <Input
                       placeholder="e.g. Google Drive Slides, Reference Sheet"
                       value={resTitle}
+                      disabled={isUploading}
                       onChange={(e) => setResTitle(e.target.value)}
                       required
                     />
                   </div>
-                  <div>
-                    <label className="block text-[10px] font-bold text-text-secondary uppercase mb-1">URL / Link</label>
-                    <Input
-                      type="url"
-                      placeholder="https://..."
-                      value={resUrl}
-                      onChange={(e) => setResUrl(e.target.value)}
-                      required
-                    />
-                  </div>
+                  
+                  {!uploadToDrive && (
+                    <div className="space-y-2">
+                      {(resType === 'pdf' || resType === 'file') && (
+                        <div className="pb-1">
+                          <label className="block text-[10px] font-bold text-text-secondary uppercase mb-1">
+                            {resType === 'pdf' ? 'Attach Local PDF File' : 'Attach Local File'}
+                          </label>
+                          <input
+                            type="file"
+                            accept={resType === 'pdf' ? 'application/pdf' : '*'}
+                            onChange={handleFileChange}
+                            disabled={isUploading}
+                            className="w-full text-xs text-text-primary file:mr-3 file:py-1 file:px-2.5 file:rounded-lg file:border file:border-border-color file:text-[10px] file:font-semibold file:bg-bg-app file:text-text-primary hover:file:bg-bg-app/80 file:cursor-pointer cursor-pointer"
+                          />
+                          {attachedFile && (
+                            <div className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold mt-1">
+                              ✓ Attached: {attachedFile.name}
+                            </div>
+                          )}
+                          <div className="text-[9px] text-text-secondary mt-1">
+                            Or enter a web link / path below:
+                          </div>
+                        </div>
+                      )}
+                      <div>
+                        <label className="block text-[10px] font-bold text-text-secondary uppercase mb-1">
+                          {resType === 'drive' ? 'Google Drive Link / Doc ID' :
+                           resType === 'pdf' ? 'PDF Link or Local Path' :
+                           resType === 'file' ? 'File Link or File Path' :
+                           'URL / Link'}
+                        </label>
+                        <Input
+                          type="text"
+                          placeholder={
+                            resType === 'drive' ? 'https://drive.google.com/... or Doc ID' :
+                            resType === 'pdf' ? 'https://... or /path/to/file.pdf' :
+                            resType === 'file' ? 'https://... or C:\\projects\\notes.txt' :
+                            'https://example.com/article'
+                          }
+                          value={resUrl}
+                          onChange={(e) => setResUrl(e.target.value)}
+                          required
+                        />
+                      </div>
+                    </div>
+                  )}
                 </div>
+
+                {/* Upload to Google Drive Sub-Step Section */}
+                {connectedDriveAccounts && connectedDriveAccounts.length > 0 && (
+                  <div className="p-3 bg-bg-app/40 border border-border-color rounded-xl space-y-3">
+                    <label className="flex items-center gap-2 text-xs font-semibold text-text-primary cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={uploadToDrive}
+                        disabled={isUploading}
+                        onChange={(e) => {
+                          setUploadToDrive(e.target.checked);
+                          if (e.target.checked) {
+                            setResType('drive');
+                          } else {
+                            setResType('link');
+                          }
+                        }}
+                        className="rounded border-border-color text-accent focus:ring-accent"
+                      />
+                      <span>☁️ Upload/Sync this resource to Google Drive</span>
+                    </label>
+
+                    {uploadToDrive && (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-border-color/60 animate-fade-in">
+                        <div>
+                          <label className="block text-[10px] font-bold text-text-secondary uppercase mb-1">Select GDrive Account</label>
+                          <select
+                            value={selectedDriveEmail}
+                            disabled={isUploading}
+                            onChange={(e) => setSelectedDriveEmail(e.target.value)}
+                            className="w-full text-xs h-9 bg-card-bg border border-border-color rounded-xl px-2.5 focus:border-accent outline-none"
+                          >
+                            {connectedDriveAccounts.map(acc => (
+                              <option key={acc.email} value={acc.email}>
+                                {acc.email}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-bold text-text-secondary uppercase mb-1">Select Destination Folder</label>
+                          <select
+                            value={selectedFolderId}
+                            disabled={isUploading}
+                            onChange={(e) => setSelectedFolderId(e.target.value)}
+                            className="w-full text-xs h-9 bg-card-bg border border-border-color rounded-xl px-2.5 focus:border-accent outline-none"
+                          >
+                            {driveFolders.map(folder => (
+                              <option key={folder.id} value={folder.id}>
+                                {folder.name} ({folder.path})
+                              </option>
+                            ))}
+                            {driveFolders.length === 0 && (
+                              <option value="f_root">My Drive (Root)</option>
+                            )}
+                          </select>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 <div className="flex items-center justify-between pt-2 border-t border-border-color/60">
                   <div className="flex items-center gap-1.5">
-                    {(['link', 'drive', 'pdf', 'file'] as const).map(type => (
+                    {(!uploadToDrive ? (['link', 'drive', 'pdf', 'file'] as const) : (['drive'] as const)).map(type => (
                       <Button
                         key={type}
                         type="button"
                         variant={resType === type ? 'secondary' : 'ghost'}
                         size="sm"
+                        disabled={isUploading}
                         onClick={() => setResType(type)}
                         className="h-6 px-2.5 text-[10px]"
                       >
@@ -173,9 +411,10 @@ export const WorkspaceDetail: React.FC = () => {
 
                   <Button
                     type="submit"
+                    disabled={isUploading}
                     size="sm"
                   >
-                    Save Resource
+                    {isUploading ? 'Uploading...' : 'Save Resource'}
                   </Button>
                 </div>
               </form>

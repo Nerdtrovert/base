@@ -1,10 +1,23 @@
 import { Pool, PoolClient } from 'pg';
 import dotenv from 'dotenv';
+import fs from 'fs';
+import path from 'path';
 
 dotenv.config();
 
+const useConnectionString = Boolean(process.env.DATABASE_URL);
+const connectionConfig = useConnectionString
+  ? { connectionString: process.env.DATABASE_URL }
+  : {
+      host: process.env.PGHOST || 'localhost',
+      port: Number(process.env.PGPORT || 5432),
+      database: process.env.PGDATABASE || 'base_db',
+      user: process.env.PGUSER || 'postgres',
+      password: process.env.PGPASSWORD || 'password'
+    };
+
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL || 'postgresql://user:password@localhost:5432/base_db'
+  ...connectionConfig
 });
 
 pool.on('error', (err: Error) => {
@@ -33,137 +46,47 @@ export const initializeDatabase = async (): Promise<void> => {
   const client = await getClient();
   
   try {
-    // Users table
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS users (
-        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        email VARCHAR(255) UNIQUE NOT NULL,
-        google_id VARCHAR(255) UNIQUE NOT NULL,
-        name VARCHAR(255),
-        picture VARCHAR(500),
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        settings JSONB DEFAULT '{}'
-      );
-      CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
-      CREATE INDEX IF NOT EXISTS idx_users_google_id ON users(google_id);
-    `);
+    // Determine path to schema.sql
+    let schemaPath = path.join(process.cwd(), 'database', 'schema.sql');
+    if (!fs.existsSync(schemaPath)) {
+      schemaPath = path.join(__dirname, 'schema.sql');
+    }
 
-    // Devices table
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS devices (
-        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-        device_name VARCHAR(255),
-        device_type VARCHAR(50),
-        os VARCHAR(50),
-        unique_identifier VARCHAR(255),
-        last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        last_sync TIMESTAMP,
-        sync_version INT DEFAULT 0,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        UNIQUE(user_id, unique_identifier)
-      );
-      CREATE INDEX IF NOT EXISTS idx_devices_user_id ON devices(user_id);
-      CREATE INDEX IF NOT EXISTS idx_devices_last_seen ON devices(last_seen);
-    `);
+    if (fs.existsSync(schemaPath)) {
+      console.log(`[Database] Loading schema from ${schemaPath}`);
+      const schemaSql = fs.readFileSync(schemaPath, 'utf8');
+      await client.query(schemaSql);
+      console.log('[Database] Schema initialized successfully');
+    } else {
+      console.error('[Database] schema.sql file not found!');
+      throw new Error('schema.sql file not found');
+    }
 
-    // Refresh tokens table
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS refresh_tokens (
-        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-        device_id UUID NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
-        token_hash VARCHAR(255) UNIQUE NOT NULL,
-        expires_at TIMESTAMP NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );
-      CREATE INDEX IF NOT EXISTS idx_refresh_tokens_user_id ON refresh_tokens(user_id);
-      CREATE INDEX IF NOT EXISTS idx_refresh_tokens_device_id ON refresh_tokens(device_id);
-      CREATE INDEX IF NOT EXISTS idx_refresh_tokens_expires_at ON refresh_tokens(expires_at);
-    `);
+    // Check if seeding is needed (e.g., if users table is empty)
+    try {
+      const userCountResult = await client.query('SELECT COUNT(*) FROM users');
+      const userCount = parseInt(userCountResult.rows[0].count, 10);
+      
+      if (userCount === 0) {
+        let seedPath = path.join(process.cwd(), 'database', 'seed.sql');
+        if (!fs.existsSync(seedPath)) {
+          seedPath = path.join(__dirname, 'seed.sql');
+        }
 
-    // Sync events table (immutable log)
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS sync_events (
-        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-        device_id UUID REFERENCES devices(id),
-        event_type VARCHAR(50),
-        content_id VARCHAR(255),
-        content_hash VARCHAR(64),
-        payload JSONB,
-        timestamp TIMESTAMP NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );
-      CREATE INDEX IF NOT EXISTS idx_sync_events_user_timestamp ON sync_events(user_id, timestamp);
-      CREATE INDEX IF NOT EXISTS idx_sync_events_device_timestamp ON sync_events(device_id, timestamp);
-      CREATE INDEX IF NOT EXISTS idx_sync_events_content_id ON sync_events(content_id);
-    `);
-
-    // Device sync pointers
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS device_sync_pointers (
-        device_id UUID PRIMARY KEY REFERENCES devices(id) ON DELETE CASCADE,
-        global_sync_version INT,
-        last_sync_time TIMESTAMP,
-        pending_acks INT DEFAULT 0
-      );
-    `);
-
-    // Sync conflicts log
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS sync_conflicts (
-        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-        content_id VARCHAR(255),
-        device_1_id UUID REFERENCES devices(id),
-        device_2_id UUID REFERENCES devices(id),
-        device_1_version INT,
-        device_2_version INT,
-        resolution VARCHAR(50),
-        resolved_at TIMESTAMP,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );
-      CREATE INDEX IF NOT EXISTS idx_sync_conflicts_user_id ON sync_conflicts(user_id);
-    `);
-
-    // Backup manifests
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS backup_manifests (
-        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-        backup_date TIMESTAMP,
-        item_count INT,
-        total_size_bytes BIGINT,
-        manifest_hash VARCHAR(64),
-        drive_location VARCHAR(500),
-        status VARCHAR(20),
-        last_verified TIMESTAMP,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );
-      CREATE INDEX IF NOT EXISTS idx_backup_manifests_user_id ON backup_manifests(user_id);
-      CREATE INDEX IF NOT EXISTS idx_backup_manifests_backup_date ON backup_manifests(backup_date);
-    `);
-
-    // OAuth tokens (encrypted)
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS oauth_tokens (
-        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-        service VARCHAR(50),
-        scope VARCHAR(500),
-        encrypted_token TEXT,
-        encrypted_refresh_token TEXT,
-        expires_at TIMESTAMP,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );
-      CREATE INDEX IF NOT EXISTS idx_oauth_tokens_user_id ON oauth_tokens(user_id);
-    `);
-
-    console.log('[Database] Schema initialized successfully');
+        if (fs.existsSync(seedPath)) {
+          console.log(`[Database] Seeding database using ${seedPath}`);
+          const seedSql = fs.readFileSync(seedPath, 'utf8');
+          await client.query(seedSql);
+          console.log('[Database] Seed data loaded successfully');
+        } else {
+          console.log('[Database] seed.sql file not found, skipping seeding.');
+        }
+      }
+    } catch (seedError) {
+      console.log('[Database] Warning: Seed check or execution skipped/failed:', seedError);
+    }
   } catch (error) {
-    console.error('[Database] Error initializing schema:', error);
+    console.error('[Database] Error initializing database:', error);
     throw error;
   } finally {
     client.release();

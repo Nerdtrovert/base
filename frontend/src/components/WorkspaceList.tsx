@@ -60,9 +60,9 @@ export const WorkspaceList: React.FC = () => {
           transition={{ duration: 0.3 }}
         >
           <Card className="relative overflow-hidden group">
-            <div className="absolute top-0 left-0 w-1.5 h-full bg-accent" />
+            <div className="absolute top-4 left-4 bottom-4 w-[3px] rounded-full bg-accent/80" />
             <CardContent className="p-5 flex items-start justify-between">
-              <div className="space-y-2">
+              <div className="space-y-2 pl-4">
                 <span className="text-[10px] font-bold text-accent tracking-wider uppercase block">
                   ▶ CONTINUE WORKING
                 </span>
@@ -174,7 +174,7 @@ export const WorkspaceList: React.FC = () => {
                 {sortedWorkspaces.map(ws => (
                   <motion.div
                     key={ws.id}
-                    className="flex items-center justify-between group p-2.5 rounded-xl hover:bg-black/5 dark:hover:bg-white/5 border border-transparent hover:border-border-color transition-all"
+                    className="flex items-center justify-between group p-2.5 rounded-2xl hover:bg-accent-light/45 border border-transparent hover:border-border-color transition-all"
                     layout
                     initial={{ opacity: 0, x: -10 }}
                     animate={{ opacity: 1, x: 0 }}
@@ -202,7 +202,7 @@ export const WorkspaceList: React.FC = () => {
                         variant="ghost"
                         size="icon"
                         onClick={() => deleteWorkspace(ws.id)}
-                        className="h-7 w-7 p-0 text-text-secondary hover:text-rose-500 rounded opacity-0 group-hover:opacity-100"
+                        className="h-7 w-7 p-0 text-text-secondary hover:text-rose-500 rounded opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
                         title="Delete workspace"
                       >
                         <Trash2 className="w-3.5 h-3.5" />

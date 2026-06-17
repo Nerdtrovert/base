@@ -38,6 +38,7 @@ export interface Resource {
   mimeType?: string;
   pinned: boolean;
   createdAt: number;
+  extractedText?: string;
 }
 
 class BaseDatabase extends Dexie {

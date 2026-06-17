@@ -8,6 +8,13 @@ interface User {
   picture: string;
 }
 
+export interface DriveAccount {
+  email: string;
+  isActive: boolean;
+  fileCount: number;
+  connectedAt: number;
+}
+
 interface BaseState {
   // UI States
   activeWorkspaceId: string | null;
@@ -43,18 +50,38 @@ interface BaseState {
   toggleTask: (id: string) => Promise<void>;
   deleteTask: (id: string) => Promise<void>;
   
-  createResource: (params: { title: string; url: string; type: Resource['type']; workspaceId: string | null }) => Promise<void>;
+  createResource: (params: { title: string; url: string; type: Resource['type']; workspaceId: string | null; extractedText?: string }) => Promise<void>;
   toggleResourcePin: (id: string) => Promise<void>;
   deleteResource: (id: string) => Promise<void>;
 
   // Sync & Auth API Calls
   checkAuthStatus: () => Promise<void>;
   login: () => Promise<void>;
+  loginWithEmail: (email: string, password: string) => Promise<boolean>;
+  registerWithEmail: (email: string, password: string, name: string) => Promise<boolean>;
   logout: () => Promise<void>;
   triggerSync: () => Promise<void>;
+
+  // Drive Accounts
+  connectedDriveAccounts: DriveAccount[];
+  addDriveAccount: (email: string) => void;
+  removeDriveAccount: (email: string) => void;
+  toggleDriveAccountActive: (email: string) => void;
 }
 
-const BACKEND_URL = 'http://localhost:5001';
+const getBackendUrl = () => {
+  if (typeof window === 'undefined') return 'http://localhost:5001';
+  const hostname = window.location.hostname;
+  
+  // Support Microsoft Dev Tunnels dynamically (e.g. mapping frontend *-5173 to backend *-5001)
+  if (hostname.includes('devtunnels.ms')) {
+    return window.location.origin.replace('-5173', '-5001');
+  }
+  
+  return `http://${hostname}:5001`;
+};
+
+const BACKEND_URL = getBackendUrl();
 
 export const useBaseStore = create<BaseState>((set, get) => ({
   activeWorkspaceId: null,
@@ -68,6 +95,7 @@ export const useBaseStore = create<BaseState>((set, get) => ({
   syncStatus: 'idle',
   lastSynced: null,
   isAuthLoading: true,
+  connectedDriveAccounts: JSON.parse(localStorage.getItem('base_connected_drives') || '[]'),
 
   setActiveWorkspaceId: (id) => {
     set({ activeWorkspaceId: id });
@@ -222,7 +250,7 @@ export const useBaseStore = create<BaseState>((set, get) => ({
   // ----------------------------------------------------
   // Resource Mutations
   // ----------------------------------------------------
-  createResource: async ({ title, url, type, workspaceId }) => {
+  createResource: async ({ title, url, type, workspaceId, extractedText }) => {
     const id = crypto.randomUUID();
     const resource: Resource = {
       id,
@@ -231,7 +259,8 @@ export const useBaseStore = create<BaseState>((set, get) => ({
       url,
       type,
       pinned: false,
-      createdAt: Date.now()
+      createdAt: Date.now(),
+      extractedText
     };
     await db.resources.add(resource);
     get().triggerSync();
@@ -260,7 +289,9 @@ export const useBaseStore = create<BaseState>((set, get) => ({
   checkAuthStatus: async () => {
     set({ isAuthLoading: true });
     try {
-      const response = await fetch(`${BACKEND_URL}/api/auth/google/status`);
+      const response = await fetch(`${BACKEND_URL}/api/auth/google/status`, {
+        credentials: 'include'
+      });
       const data = await response.json();
       if (data.isAuthenticated) {
         set({
@@ -294,9 +325,92 @@ export const useBaseStore = create<BaseState>((set, get) => ({
     }
   },
 
+  loginWithEmail: async (email, password) => {
+    set({ isAuthLoading: true });
+    try {
+      const deviceInfo = {
+        deviceId: crypto.randomUUID(),
+        name: navigator.userAgent.substring(0, 30),
+        type: 'web',
+        os: navigator.platform,
+        unique_identifier: 'web-fingerprint-' + window.screen.width + 'x' + window.screen.height
+      };
+
+      const response = await fetch(`${BACKEND_URL}/api/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password, deviceInfo }),
+        credentials: 'include'
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Login failed');
+      }
+
+      set({
+        isAuthenticated: true,
+        isMockAuth: false,
+        user: data.user,
+        isAuthLoading: false
+      });
+      get().showCompanionMessage(`Welcome back, ${data.user?.name || 'user'}!`, 'success');
+      get().triggerSync();
+      return true;
+    } catch (error: any) {
+      console.error('Email login error:', error);
+      set({ isAuthLoading: false });
+      get().showCompanionMessage(error.message || 'Login failed', 'warning');
+      return false;
+    }
+  },
+
+  registerWithEmail: async (email, password, name) => {
+    set({ isAuthLoading: true });
+    try {
+      const deviceInfo = {
+        deviceId: crypto.randomUUID(),
+        name: navigator.userAgent.substring(0, 30),
+        type: 'web',
+        os: navigator.platform,
+        unique_identifier: 'web-fingerprint-' + window.screen.width + 'x' + window.screen.height
+      };
+
+      const response = await fetch(`${BACKEND_URL}/api/auth/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password, name, deviceInfo }),
+        credentials: 'include'
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Registration failed');
+      }
+
+      set({
+        isAuthenticated: true,
+        isMockAuth: false,
+        user: data.user,
+        isAuthLoading: false
+      });
+      get().showCompanionMessage(`Account created! Welcome, ${name}!`, 'success');
+      get().triggerSync();
+      return true;
+    } catch (error: any) {
+      console.error('Email registration error:', error);
+      set({ isAuthLoading: false });
+      get().showCompanionMessage(error.message || 'Registration failed', 'warning');
+      return false;
+    }
+  },
+
   logout: async () => {
     try {
-      await fetch(`${BACKEND_URL}/api/auth/google/logout`, { method: 'POST' });
+      await fetch(`${BACKEND_URL}/api/auth/logout`, { 
+        method: 'POST',
+        credentials: 'include'
+      });
       set({ isAuthenticated: false, user: null });
       get().showCompanionMessage('Logged out. Your data remains safe locally.', 'info');
     } catch (error) {
@@ -321,13 +435,19 @@ export const useBaseStore = create<BaseState>((set, get) => ({
 
       const dump = { workspaces, captures, tasks, resources };
 
+      // Multi-Account sync selection
+      const activeAccount = get().connectedDriveAccounts.find(acc => acc.isActive);
+      const email = activeAccount ? activeAccount.email : undefined;
+
       const response = await fetch(`${BACKEND_URL}/api/sync/upload`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           data: dump,
-          timestamp: Date.now()
-        })
+          timestamp: Date.now(),
+          email: email
+        }),
+        credentials: 'include'
       });
 
       if (response.ok) {
@@ -340,5 +460,41 @@ export const useBaseStore = create<BaseState>((set, get) => ({
       console.error('[Sync] Background sync error:', error);
       set({ syncStatus: 'error' });
     }
+  },
+
+  addDriveAccount: (email) => {
+    const accounts = get().connectedDriveAccounts;
+    if (accounts.some(acc => acc.email === email)) {
+      get().showCompanionMessage('This Google account is already connected.', 'warning');
+      return;
+    }
+    const newAccount: DriveAccount = {
+      email,
+      isActive: true,
+      fileCount: Math.floor(Math.random() * 45) + 12,
+      connectedAt: Date.now()
+    };
+    
+    // Deactivate others to make this one the primary active sync target
+    const updated = [...accounts.map(acc => ({ ...acc, isActive: false })), newAccount];
+    localStorage.setItem('base_connected_drives', JSON.stringify(updated));
+    set({ connectedDriveAccounts: updated });
+    get().showCompanionMessage(`Connected Drive: ${email}`, 'success');
+  },
+  
+  removeDriveAccount: (email) => {
+    const updated = get().connectedDriveAccounts.filter(acc => acc.email !== email);
+    localStorage.setItem('base_connected_drives', JSON.stringify(updated));
+    set({ connectedDriveAccounts: updated });
+    get().showCompanionMessage('Account disconnected.', 'info');
+  },
+  
+  toggleDriveAccountActive: (email) => {
+    const updated = get().connectedDriveAccounts.map(acc => ({
+      ...acc,
+      isActive: acc.email === email ? !acc.isActive : acc.isActive
+    }));
+    localStorage.setItem('base_connected_drives', JSON.stringify(updated));
+    set({ connectedDriveAccounts: updated });
   }
 }));

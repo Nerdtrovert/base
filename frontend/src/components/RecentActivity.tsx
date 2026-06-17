@@ -151,7 +151,7 @@ export const RecentActivity: React.FC = () => {
                     {items.map(item => (
                       <motion.div 
                         key={item.id}
-                        className="relative flex items-start justify-between gap-3 group"
+                        className="relative flex items-start justify-between gap-3 group rounded-xl px-1.5 py-1 hover:bg-accent-light/20 transition-colors"
                         layout
                         initial={{ opacity: 0, x: -5 }}
                         animate={{ opacity: 1, x: 0 }}
@@ -198,7 +198,7 @@ export const RecentActivity: React.FC = () => {
                           variant="ghost"
                           size="icon"
                           onClick={() => handleDeleteItem(item)}
-                          className="h-7 w-7 text-text-secondary hover:text-rose-500 opacity-0 group-hover:opacity-100 flex-shrink-0"
+                          className="h-7 w-7 text-text-secondary hover:text-rose-500 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 flex-shrink-0"
                           aria-label="Remove item"
                         >
                           <Trash2 className="w-3.5 h-3.5" />

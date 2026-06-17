@@ -61,7 +61,7 @@ export const TaskDashboard: React.FC = () => {
           {tasks.map(task => (
             <motion.div 
               key={task.id} 
-              className="flex items-center justify-between group p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+              className="flex items-center justify-between group p-1.5 rounded-lg hover:bg-accent-light/25 transition-colors"
               initial={{ opacity: 0, y: -5 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, x: -15, height: 0, marginBottom: 0, paddingTop: 0, paddingBottom: 0 }}
@@ -86,7 +86,7 @@ export const TaskDashboard: React.FC = () => {
                 variant="ghost"
                 size="icon"
                 onClick={() => deleteTask(task.id)}
-                className="h-7 w-7 text-text-secondary hover:text-rose-500 opacity-0 group-hover:opacity-100"
+                className="h-7 w-7 text-text-secondary hover:text-rose-500 opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
                 aria-label="Delete task"
               >
                 <Trash2 className="w-3.5 h-3.5" />

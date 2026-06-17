@@ -68,6 +68,24 @@ export const PinnedResources: React.FC<PinnedResourcesProps> = ({ workspaceId = 
     }
   };
 
+  const formatResourceUrl = (urlStr: string) => {
+    if (!urlStr) return '';
+    const trimmed = urlStr.trim();
+    if (trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.startsWith('file://')) {
+      return trimmed;
+    }
+    // Windows absolute path
+    if (/^[A-Za-z]:\\/.test(trimmed)) {
+      return `file:///${trimmed.replace(/\\/g, '/')}`;
+    }
+    // Unix absolute path
+    if (trimmed.startsWith('/')) {
+      return `file://${trimmed}`;
+    }
+    // Fallback
+    return trimmed;
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -114,7 +132,7 @@ export const PinnedResources: React.FC<PinnedResourcesProps> = ({ workspaceId = 
                       className={`absolute top-2.5 right-2.5 p-1.5 rounded-lg backdrop-blur-md shadow-sm transition-all ${
                         res.pinned 
                           ? 'bg-accent text-white border border-accent/20' 
-                          : 'bg-black/40 text-white/90 hover:bg-black/60 opacity-0 group-hover:opacity-100'
+                          : 'bg-black/40 text-white/90 hover:bg-black/60 opacity-100 sm:opacity-0 sm:group-hover:opacity-100'
                       }`}
                       title={res.pinned ? "Unpin from home" : "Pin to home"}
                     >
@@ -148,14 +166,14 @@ export const PinnedResources: React.FC<PinnedResourcesProps> = ({ workspaceId = 
                           variant="ghost"
                           size="icon"
                           onClick={() => deleteResource(res.id)}
-                          className="h-7 w-7 text-text-secondary hover:text-rose-500 opacity-0 group-hover:opacity-100"
+                          className="h-7 w-7 text-text-secondary hover:text-rose-500 opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
                           title="Delete resource"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </Button>
                         
                         <a
-                          href={res.url}
+                          href={formatResourceUrl(res.url)}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="flex items-center gap-1 text-[11px] font-semibold text-accent hover:bg-accent-light px-2.5 py-1.5 rounded-lg border border-accent/10 transition-colors"

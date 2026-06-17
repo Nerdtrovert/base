@@ -2,11 +2,11 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useBaseStore } from '../store/useBaseStore';
 import { searchEverything, type SearchResult } from '../utils/search';
-import { Search, Folder, MessageSquare, CheckSquare, Link, CornerDownLeft } from 'lucide-react';
+import { Search, Folder, MessageSquare, CheckSquare, Link, CornerDownLeft, HardDrive } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 export const SpotlightSearch: React.FC = () => {
-  const { isSearchOpen, setSearchOpen, setActiveWorkspaceId } = useBaseStore();
+  const { isSearchOpen, setSearchOpen, setActiveWorkspaceId, connectedDriveAccounts } = useBaseStore();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SearchResult[]>([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -32,7 +32,12 @@ export const SpotlightSearch: React.FC = () => {
         setResults([]);
         return;
       }
-      const searchRes = await searchEverything(query);
+      
+      const activeDrives = connectedDriveAccounts
+        ? connectedDriveAccounts.map(d => d.email)
+        : [];
+        
+      const searchRes = await searchEverything(query, activeDrives);
       if (active) {
         setResults(searchRes.slice(0, 8)); // limit to top 8
         setSelectedIndex(0);
@@ -44,7 +49,7 @@ export const SpotlightSearch: React.FC = () => {
       active = false;
       clearTimeout(debounce);
     };
-  }, [query]);
+  }, [query, connectedDriveAccounts]);
 
   // Global toggle shortcut: Cmd+K / Ctrl+K
   useEffect(() => {
@@ -82,6 +87,8 @@ export const SpotlightSearch: React.FC = () => {
     if (item.type === 'workspace') {
       setActiveWorkspaceId(item.id);
       navigate(`/workspace/${item.id}`);
+    } else if (item.type === 'gdrive') {
+      if (item.url) window.open(item.url, '_blank');
     } else if (item.workspaceId) {
       setActiveWorkspaceId(item.workspaceId);
       navigate(`/workspace/${item.workspaceId}`);
@@ -124,7 +131,7 @@ export const SpotlightSearch: React.FC = () => {
                 ref={inputRef}
                 type="text"
                 placeholder="Search workspaces, notes, tasks, files..."
-                className="w-full bg-transparent border-none outline-none text-text-primary placeholder-text-secondary text-lg"
+                className="w-full bg-transparent border-none outline-none text-text-primary placeholder:text-text-secondary text-lg"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
               />
@@ -154,7 +161,7 @@ export const SpotlightSearch: React.FC = () => {
                         className={`w-full flex items-center justify-between gap-3 p-3 rounded-xl text-left transition-colors ${
                           isSelected 
                             ? 'bg-accent-light text-accent' 
-                            : 'text-text-primary hover:bg-black/5 dark:hover:bg-white/5'
+                            : 'text-text-primary hover:bg-accent-light/20'
                         }`}
                       >
                         <div className="flex items-center gap-3 min-w-0">
@@ -167,6 +174,7 @@ export const SpotlightSearch: React.FC = () => {
                             {item.type === 'capture' && <MessageSquare className="w-4 h-4" />}
                             {item.type === 'task' && <CheckSquare className="w-4 h-4" />}
                             {item.type === 'resource' && <Link className="w-4 h-4" />}
+                            {item.type === 'gdrive' && <HardDrive className="w-4 h-4" />}
                           </div>
                           <div className="min-w-0">
                             <div className="font-medium truncate text-sm">
@@ -175,6 +183,11 @@ export const SpotlightSearch: React.FC = () => {
                             <div className={`text-xs truncate ${isSelected ? 'text-accent/80' : 'text-text-secondary'}`}>
                               {item.subtitle} {item.workspaceName ? `in ${item.workspaceName}` : ''}
                             </div>
+                            {item.snippet && (
+                              <div className="text-[11px] text-emerald-600 dark:text-emerald-400 font-mono mt-1 border-l-2 border-emerald-500/50 pl-2 max-w-lg truncate">
+                                {item.snippet}
+                              </div>
+                            )}
                           </div>
                         </div>
 

@@ -1,12 +1,13 @@
 import jwt, { SignOptions } from 'jsonwebtoken';
 import { v4 as uuidv4 } from 'uuid';
 import { google } from 'googleapis';
+import bcrypt from 'bcrypt';
 import { query } from '../database/postgres';
 import { User, AuthTokenResponse, JWTPayload } from '../models/types';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
 const JWT_EXPIRY = '15m';
-const REFRESH_TOKEN_EXPIRY = '7d';
+const REFRESH_TOKEN_EXPIRY = '30d';
 
 // Initialize Google OAuth2 Client
 export const oauth2Client = new google.auth.OAuth2(
@@ -50,19 +51,47 @@ export const exchangeCodeForTokens = async (
       picture: userInfo.data.picture
     };
 
-    // Upsert user
+    // Upsert user with Google tokens
     const userResult = await query(
-      `INSERT INTO users (email, google_id, name, picture) 
-       VALUES ($1, $2, $3, $4)
+      `INSERT INTO users (email, google_id, name, picture, google_access_token, google_refresh_token) 
+       VALUES ($1, $2, $3, $4, $5, $6)
        ON CONFLICT (google_id) DO UPDATE SET
        name = EXCLUDED.name,
        picture = EXCLUDED.picture,
+       google_access_token = EXCLUDED.google_access_token,
+       google_refresh_token = COALESCE(EXCLUDED.google_refresh_token, users.google_refresh_token),
        updated_at = CURRENT_TIMESTAMP
        RETURNING id`,
-      [userData.email, userData.google_id, userData.name, userData.picture]
+      [
+        userData.email,
+        userData.google_id,
+        userData.name,
+        userData.picture,
+        tokens.access_token,
+        tokens.refresh_token
+      ]
     );
 
     const userId = userResult.rows[0].id;
+
+    // Save/update to oauth_tokens table for multi-account support
+    await query(
+      `INSERT INTO oauth_tokens (user_id, service, scope, encrypted_token, encrypted_refresh_token, expires_at, email)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       ON CONFLICT (user_id, email) DO UPDATE SET
+       encrypted_token = EXCLUDED.encrypted_token,
+       encrypted_refresh_token = COALESCE(EXCLUDED.encrypted_refresh_token, oauth_tokens.encrypted_refresh_token),
+       expires_at = EXCLUDED.expires_at`,
+      [
+        userId,
+        'google',
+        tokens.scope || 'https://www.googleapis.com/auth/drive.appdata',
+        tokens.access_token,
+        tokens.refresh_token,
+        tokens.expiry_date ? new Date(tokens.expiry_date) : null,
+        userData.email
+      ]
+    );
 
     // Upsert device
     const deviceResult = await query(
@@ -100,7 +129,7 @@ export const exchangeCodeForTokens = async (
 
     // Store refresh token hash in database
     const tokenHash = Buffer.from(refreshToken).toString('base64');
-    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
 
     await query(
       `INSERT INTO refresh_tokens (user_id, device_id, token_hash, expires_at)
@@ -183,5 +212,134 @@ export const logout = async (deviceId: string): Promise<boolean> => {
   } catch (error) {
     console.error('[Auth] Error logging out:', error);
     return false;
+  }
+};
+
+// Helper to register device and generate JWT + Refresh tokens
+export const registerDeviceAndGenerateTokens = async (
+  userId: string,
+  deviceInfo: { name: string; type: string; os: string; unique_identifier: string }
+): Promise<AuthTokenResponse> => {
+  // Upsert device
+  const deviceResult = await query(
+    `INSERT INTO devices (user_id, device_name, device_type, os, unique_identifier, last_sync, sync_version)
+     VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP, 0)
+     ON CONFLICT (user_id, unique_identifier) DO UPDATE SET
+     last_seen = CURRENT_TIMESTAMP,
+     last_sync = CURRENT_TIMESTAMP
+     RETURNING id`,
+    [userId, deviceInfo.name, deviceInfo.type, deviceInfo.os, deviceInfo.unique_identifier]
+  );
+
+  const dbDeviceId = deviceResult.rows[0].id;
+
+  // Generate JWT and refresh token
+  const signOptions: SignOptions = { expiresIn: JWT_EXPIRY };
+  const accessToken = jwt.sign(
+    { userId, deviceId: dbDeviceId },
+    JWT_SECRET,
+    signOptions
+  );
+
+  const refreshSignOptions: SignOptions = { expiresIn: REFRESH_TOKEN_EXPIRY };
+  const refreshTokenPayload = {
+    userId,
+    deviceId: dbDeviceId,
+    jti: uuidv4()
+  };
+
+  const refreshToken = jwt.sign(
+    refreshTokenPayload,
+    JWT_SECRET,
+    refreshSignOptions
+  );
+
+  // Store refresh token hash in database
+  const tokenHash = Buffer.from(refreshToken).toString('base64');
+  const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+
+  await query(
+    `INSERT INTO refresh_tokens (user_id, device_id, token_hash, expires_at)
+     VALUES ($1, $2, $3, $4)`,
+    [userId, dbDeviceId, tokenHash, expiresAt]
+  );
+
+  return {
+    accessToken,
+    refreshToken,
+    userId,
+    deviceId: dbDeviceId,
+    expiresIn: 15 * 60
+  };
+};
+
+export const registerWithEmail = async (
+  email: string,
+  passwordStr: string,
+  name: string,
+  deviceInfo: { name: string; type: string; os: string; unique_identifier: string }
+): Promise<AuthTokenResponse> => {
+  try {
+    // Check if user already exists
+    const existingUser = await query('SELECT id FROM users WHERE email = $1', [email]);
+    if (existingUser.rows.length > 0) {
+      throw new Error('User already exists with this email');
+    }
+
+    // Hash password
+    const saltRounds = 10;
+    const passwordHash = await bcrypt.hash(passwordStr, saltRounds);
+
+    // Default picture placeholder using UI avatar styling
+    const picture = `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(name)}`;
+
+    // Insert user
+    const userResult = await query(
+      `INSERT INTO users (email, password_hash, name, picture)
+       VALUES ($1, $2, $3, $4)
+       RETURNING id`,
+      [email, passwordHash, name, picture]
+    );
+
+    const userId = userResult.rows[0].id;
+
+    // Register device and generate tokens
+    return await registerDeviceAndGenerateTokens(userId, deviceInfo);
+  } catch (error: any) {
+    console.error('[Auth] Error registering with email:', error);
+    throw new Error(error.message || 'Registration failed');
+  }
+};
+
+export const loginWithEmail = async (
+  email: string,
+  passwordStr: string,
+  deviceInfo: { name: string; type: string; os: string; unique_identifier: string }
+): Promise<AuthTokenResponse> => {
+  try {
+    // Get user
+    const userResult = await query('SELECT * FROM users WHERE email = $1', [email]);
+    if (userResult.rows.length === 0) {
+      throw new Error('Invalid email or password');
+    }
+
+    const user = userResult.rows[0];
+
+    // Check if password login is supported for this user (they might have registered via Google only)
+    if (!user.password_hash) {
+      throw new Error('This account uses Google Sign-In. Please connect using Google.');
+    }
+
+    // Verify password
+    const isPasswordValid = await bcrypt.compare(passwordStr, user.password_hash);
+    if (!isPasswordValid) {
+      throw new Error('Invalid email or password');
+    }
+
+    // Register device and generate tokens
+    return await registerDeviceAndGenerateTokens(user.id, deviceInfo);
+  } catch (error: any) {
+    console.error('[Auth] Error logging in with email:', error);
+    throw new Error(error.message || 'Login failed');
   }
 };

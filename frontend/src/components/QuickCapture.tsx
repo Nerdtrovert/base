@@ -69,16 +69,16 @@ export const QuickCapture: React.FC = () => {
 
   return (
     <motion.div 
-      className="bg-card-bg border border-border-color rounded-2xl shadow-card-shadow overflow-hidden"
+      className="surface-paper relative overflow-hidden rounded-[1.9rem] border border-border-color"
       layout
       transition={{ type: "spring", stiffness: 400, damping: 30 }}
     >
-      <form onSubmit={handleSave} className="p-4">
+      <form onSubmit={handleSave} className="p-5 md:p-6">
         {/* Header */}
         <AnimatePresence>
           {isExpanded && (
             <motion.div 
-              className="flex items-center justify-between mb-3 text-xs text-text-secondary font-medium"
+              className="flex items-center justify-between mb-4 text-xs text-text-secondary font-medium"
               initial={{ height: 0, opacity: 0 }}
               animate={{ height: "auto", opacity: 1 }}
               exit={{ height: 0, opacity: 0 }}
@@ -104,18 +104,18 @@ export const QuickCapture: React.FC = () => {
         <Textarea
           ref={textareaRef as any}
           placeholder={isExpanded ? "What's on your mind?" : "💡 Had an idea? Quick capture here..."}
-          rows={isExpanded ? 3 : 1}
+          rows={isExpanded ? 8 : 3}
           value={content}
           onChange={(e) => setContent(e.target.value)}
           onFocus={handleFocus}
-          className={`w-full border-none shadow-none bg-transparent p-0 text-sm focus-visible:ring-0 ${isExpanded ? 'min-h-[75px]' : 'min-h-0'}`}
+          className={`w-full border-none shadow-none bg-transparent p-0 text-base md:text-[15px] leading-7 focus-visible:ring-0 ${isExpanded ? 'min-h-[220px]' : 'min-h-[96px]'}`}
         />
 
         {/* Link Input */}
         <AnimatePresence>
           {isExpanded && showUrlInput && (
             <motion.div 
-              className="mt-3 py-2 border-t border-dashed border-border-color"
+              className="mt-4 py-3 border-t border-dashed border-border-color"
               initial={{ height: 0, opacity: 0 }}
               animate={{ height: "auto", opacity: 1 }}
               exit={{ height: 0, opacity: 0 }}
@@ -136,7 +136,7 @@ export const QuickCapture: React.FC = () => {
         <AnimatePresence>
           {isExpanded && imageAttached && (
             <motion.div 
-              className="relative mt-3 rounded-lg overflow-hidden border border-border-color max-h-32 bg-bg-app"
+              className="relative mt-4 rounded-xl overflow-hidden border border-border-color max-h-36 bg-bg-app"
               initial={{ height: 0, opacity: 0 }}
               animate={{ height: "auto", opacity: 1 }}
               exit={{ height: 0, opacity: 0 }}
@@ -161,7 +161,7 @@ export const QuickCapture: React.FC = () => {
         <AnimatePresence>
           {isExpanded && (
             <motion.div 
-              className="flex items-center justify-between mt-3 pt-3 border-t border-border-color"
+              className="flex items-center justify-between mt-4 pt-4 border-t border-border-color"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
@@ -174,7 +174,7 @@ export const QuickCapture: React.FC = () => {
                   onClick={handleAttachMockImage}
                 >
                   <Image className="w-3.5 h-3.5" />
-                  <span>Add Image</span>
+                  <span className="hidden sm:inline">Add Image</span>
                 </Button>
                 <Button
                   type="button"
@@ -183,7 +183,7 @@ export const QuickCapture: React.FC = () => {
                   onClick={() => setShowUrlInput(!showUrlInput)}
                 >
                   <LinkIcon className="w-3.5 h-3.5" />
-                  <span>Add Link</span>
+                  <span className="hidden sm:inline">Add Link</span>
                 </Button>
               </div>
 
