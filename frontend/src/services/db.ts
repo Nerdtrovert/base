@@ -63,12 +63,25 @@ export interface KnowledgeSource {
   createdAt: number;
 }
 
+export interface SyncQueueEvent {
+  id: string;
+  entityType: 'workspace' | 'capture' | 'task' | 'resource' | 'knowledgeSource';
+  entityId: string;
+  operation: 'CREATE' | 'UPDATE' | 'DELETE';
+  payload: any;
+  createdAt: number;
+  status: 'pending' | 'syncing' | 'completed' | 'failed';
+  retryCount: number;
+  lastAttempt: number | null;
+}
+
 class BaseDatabase extends Dexie {
   workspaces!: Table<Workspace>;
   captures!: Table<Capture>;
   tasks!: Table<Task>;
   resources!: Table<Resource>;
   knowledgeSources!: Table<KnowledgeSource>;
+  syncQueue!: Table<SyncQueueEvent>;
 
   constructor() {
     super('BaseDatabase');
@@ -84,6 +97,14 @@ class BaseDatabase extends Dexie {
       tasks: 'id, workspaceId, completed, dueDate, createdAt',
       resources: 'id, workspaceId, type, pinned, createdAt',
       knowledgeSources: 'id, name, folderId, googleEmail, createdAt'
+    });
+    this.version(3).stores({
+      workspaces: 'id, name, createdAt, lastOpenedAt',
+      captures: 'id, workspaceId, type, createdAt',
+      tasks: 'id, workspaceId, completed, dueDate, createdAt',
+      resources: 'id, workspaceId, type, pinned, createdAt',
+      knowledgeSources: 'id, name, folderId, googleEmail, createdAt',
+      syncQueue: 'id, entityType, entityId, operation, status, createdAt'
     });
   }
 }

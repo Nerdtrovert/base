@@ -18,7 +18,7 @@ import { BrandMark } from './components/BrandMark';
 
 // Wrapper component to handle routing hooks (useLocation, checkAuth, mobile actions)
 function AppContent() {
-  const { checkAuthStatus, setSearchOpen, isAuthenticated, isAuthLoading } = useBaseStore();
+  const { checkAuthStatus, setSearchOpen, isAuthenticated, isAuthLoading, hasUnsyncedChanges } = useBaseStore();
   const location = useLocation();
   const navigate = useNavigate();
   const ksCount = useLiveQuery(() => db.knowledgeSources.count()) ?? null;
@@ -27,6 +27,60 @@ function AppContent() {
   useEffect(() => {
     checkAuthStatus();
   }, [checkAuthStatus]);
+
+  // Listen for PWA installation availability
+  useEffect(() => {
+    const handleBeforeInstallPrompt = (e: Event) => {
+      e.preventDefault();
+      console.log('[PWA] beforeinstallprompt event fired');
+      useBaseStore.setState({ deferredPrompt: e });
+    };
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    };
+  }, []);
+
+  // Warning prompt before leaving/reloading the page with unsynced changes
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (hasUnsyncedChanges) {
+        e.preventDefault();
+        e.returnValue = 'You have unsynced changes. If you close the browser now, your latest changes may not be backed up to the cloud. Are you sure you want to exit?';
+        return e.returnValue;
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [hasUnsyncedChanges]);
+
+  // Automatically trigger sync when the browser goes back online
+  useEffect(() => {
+    const handleOnline = () => {
+      if (isAuthenticated) {
+        console.log('[Sync] Browser is back online, processing sync queue...');
+        useBaseStore.getState().processSyncQueue();
+      }
+    };
+    window.addEventListener('online', handleOnline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+    };
+  }, [isAuthenticated]);
+
+  // Run the background sync worker every 30 seconds
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    
+    const intervalId = setInterval(() => {
+      console.log('[Sync Worker] Running scheduled 30s sync check...');
+      useBaseStore.getState().processSyncQueue();
+    }, 30000);
+
+    return () => clearInterval(intervalId);
+  }, [isAuthenticated]);
 
   // Auto-subscribe/refresh push notifications if permission is already granted
   useEffect(() => {

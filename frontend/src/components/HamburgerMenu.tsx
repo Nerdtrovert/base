@@ -28,9 +28,14 @@ export const HamburgerMenu: React.FC = () => {
     toggleDriveAccountActive,
     setActiveWorkspaceId,
     logout,
-    showCompanionMessage
+    showCompanionMessage,
+    deferredPrompt
   } = useBaseStore();
   const navigate = useNavigate();
+
+  const isMobileBrowser = React.useMemo(() => {
+    return typeof window !== 'undefined' && /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+  }, []);
 
   const knowledgeSources = useLiveQuery(() => db.knowledgeSources.toArray()) || [];
   const localFolders = knowledgeSources.filter(ks => ks.sourceType === 'local');
@@ -604,6 +609,31 @@ export const HamburgerMenu: React.FC = () => {
                       )}
                     </div>
                   </div>
+
+                  {/* PWA Install Option (for mobile browsers) */}
+                  {deferredPrompt && isMobileBrowser && (
+                    <div className="space-y-3 pt-2">
+                      <div className="text-[10px] font-bold text-text-secondary uppercase tracking-[0.2em]">
+                        <span>APP</span>
+                      </div>
+                      <button
+                        onClick={async () => {
+                          setIsOpen(false);
+                          deferredPrompt.prompt();
+                          const { outcome } = await deferredPrompt.userChoice;
+                          console.log(`[PWA Install] User responded from menu: ${outcome}`);
+                          useBaseStore.setState({ deferredPrompt: null });
+                        }}
+                        className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl border border-accent/20 bg-accent/5 hover:bg-accent/10 text-left transition-colors cursor-pointer"
+                      >
+                        <div className="flex items-center gap-3 text-xs font-medium text-accent">
+                          <Cloud className="w-4 h-4 text-accent" />
+                          <span>Install Base App</span>
+                        </div>
+                        <ArrowRight className="w-3.5 h-3.5 text-accent" />
+                      </button>
+                    </div>
+                  )}
 
                   {/* 5. About Link */}
                   <div className="space-y-3 pt-2">

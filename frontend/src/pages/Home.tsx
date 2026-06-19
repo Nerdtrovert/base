@@ -1,8 +1,10 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useBaseStore } from '../store/useBaseStore';
+import { db } from '../services/db';
 import { QuickCapture } from '../components/QuickCapture';
 import { ContinueWorking } from '../components/ContinueWorking';
+import { PwaInstallPrompt } from '../components/PwaInstallPrompt';
 import { CalendarWidget } from '../components/CalendarWidget';
 import { TaskDashboard } from '../components/TaskDashboard';
 import { RecentActivity } from '../components/RecentActivity';
@@ -48,6 +50,26 @@ export const Home: React.FC = () => {
     else if (hour < 18) setGreeting(`Good afternoon, ${name}.`);
     else setGreeting(`Good evening, ${name}.`);
   }, [user]);
+
+  // Continue Working: auto-redirect to last opened workspace on startup
+  useEffect(() => {
+    const checkAndResume = async () => {
+      const sessionStarted = sessionStorage.getItem('base_session_started');
+      if (!sessionStarted) {
+        sessionStorage.setItem('base_session_started', 'true');
+        const workspaces = await db.workspaces.toArray();
+        const lastOpenedWorkspace = [...workspaces].sort((a, b) => b.lastOpenedAt - a.lastOpenedAt)[0];
+        if (lastOpenedWorkspace) {
+          setActiveWorkspaceId(lastOpenedWorkspace.id);
+          navigate(`/workspace/${lastOpenedWorkspace.id}`, { replace: true });
+        }
+      }
+    };
+    
+    if (user) {
+      checkAndResume();
+    }
+  }, [user, navigate, setActiveWorkspaceId]);
 
   // Rotate Quiet Context messages every 8 seconds
   useEffect(() => {
@@ -374,6 +396,9 @@ export const Home: React.FC = () => {
         
         {/* Left Column (Primary Widgets) */}
         <div className="lg:col-span-2 space-y-6">
+          {/* PWA Custom Install Promo */}
+          <PwaInstallPrompt />
+
           {/* 3. New Idea (Quick Capture) */}
           <QuickCapture />
 

@@ -1,7 +1,7 @@
 import React from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useBaseStore } from '../store/useBaseStore';
-import { Search, LogIn, LogOut, Sun, Moon } from 'lucide-react';
+import { Search, LogIn, LogOut, Sun, Moon, Download } from 'lucide-react';
 import { Button } from './ui/button';
 import { HamburgerMenu } from './HamburgerMenu';
 import { BrandMark } from './BrandMark';
@@ -15,7 +15,9 @@ export const Navbar: React.FC = () => {
     lastSynced, 
     setSearchOpen, 
     logout,
-    setActiveWorkspaceId
+    setActiveWorkspaceId,
+    triggerSync,
+    deferredPrompt
   } = useBaseStore();
   const navigate = useNavigate();
   const location = useLocation();
@@ -28,9 +30,26 @@ export const Navbar: React.FC = () => {
     return 'light';
   });
 
+  const [isOnline, setIsOnline] = React.useState(() => typeof window !== 'undefined' ? navigator.onLine : true);
+
+  const isMobileBrowser = React.useMemo(() => {
+    return typeof window !== 'undefined' && /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+  }, []);
+
   React.useEffect(() => {
     const currentTheme = document.documentElement.classList.contains('dark') ? 'dark' : 'light';
     setTheme(currentTheme);
+  }, []);
+
+  React.useEffect(() => {
+    const pingOnline = () => setIsOnline(true);
+    const pingOffline = () => setIsOnline(false);
+    window.addEventListener('online', pingOnline);
+    window.addEventListener('offline', pingOffline);
+    return () => {
+      window.removeEventListener('online', pingOnline);
+      window.removeEventListener('offline', pingOffline);
+    };
   }, []);
 
   const toggleTheme = () => {
@@ -53,10 +72,11 @@ export const Navbar: React.FC = () => {
   const getSyncTooltip = () => {
     if (!isAuthenticated) return 'Sync disabled. Log in to enable.';
     if (syncStatus === 'syncing') return 'Syncing...';
+    if (!isOnline) return 'You are offline. Changes are saved locally and will sync when you reconnect.';
     if (syncStatus === 'success') {
       return `Synced! Last backup: ${lastSynced ? new Date(lastSynced).toLocaleTimeString() : 'now'}`;
     }
-    if (syncStatus === 'error') return 'Sync failed. Retry in a few moments.';
+    if (syncStatus === 'error') return 'Sync failed. Click to retry syncing your local changes.';
     return 'Cloud storage in sync.';
   };
 
@@ -119,6 +139,24 @@ export const Navbar: React.FC = () => {
             </Button>
           )}
 
+          {/* Mobile PWA Install Icon */}
+          {deferredPrompt && isMobileBrowser && (
+            <Button
+              onClick={async () => {
+                deferredPrompt.prompt();
+                const { outcome } = await deferredPrompt.userChoice;
+                console.log(`[PWA Install] User responded from navbar: ${outcome}`);
+                useBaseStore.setState({ deferredPrompt: null });
+              }}
+              variant="ghost"
+              size="icon"
+              className="h-9 w-9 text-accent hover:bg-bg-app rounded-xl cursor-pointer"
+              title="Install Base App"
+            >
+              <Download className="w-4 h-4 text-accent animate-bounce" />
+            </Button>
+          )}
+
           {/* Theme Toggle Button */}
           <Button
             onClick={toggleTheme}
@@ -136,11 +174,17 @@ export const Navbar: React.FC = () => {
 
           {/* Sync Status Button */}
           <button 
-            className="text-xs font-normal text-text-secondary hover:text-accent hover:underline cursor-pointer bg-transparent border-none p-0"
+            onClick={() => {
+              if (isAuthenticated && isOnline) {
+                triggerSync();
+              }
+            }}
+            disabled={syncStatus === 'syncing' || !isOnline}
+            className="text-xs font-normal text-text-secondary hover:text-accent hover:underline cursor-pointer bg-transparent border-none p-0 disabled:hover:text-text-secondary disabled:no-underline disabled:cursor-not-allowed"
             title={getSyncTooltip()}
           >
             {isAuthenticated ? (
-              syncStatus === 'syncing' ? 'Syncing...' : syncStatus === 'error' ? 'Sync Error' : 'Saved'
+              syncStatus === 'syncing' ? 'Syncing...' : !isOnline ? 'Offline' : syncStatus === 'error' ? 'Sync Error' : 'Saved'
             ) : (
               'Offline'
             )}

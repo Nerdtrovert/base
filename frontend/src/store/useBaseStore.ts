@@ -35,7 +35,11 @@ interface BaseState {
   user: User | null;
   syncStatus: 'idle' | 'syncing' | 'success' | 'error';
   lastSynced: number | null;
+  hasUnsyncedChanges: boolean;
   isAuthLoading: boolean;
+  deviceId: string;
+  syncVersion: number;
+  deferredPrompt: any | null;
 
   // Actions
   setActiveWorkspaceId: (id: string | null) => void;
@@ -77,7 +81,8 @@ interface BaseState {
   }) => Promise<boolean>;
   getPendingGDriveSignupContext: () => Promise<PendingGDriveSignupContext | null>;
   logout: () => Promise<void>;
-  triggerSync: () => Promise<void>;
+  triggerSync: (isMutation?: boolean) => Promise<void>;
+  processSyncQueue: () => Promise<void>;
   restoreBackupFromDrive: (email?: string) => Promise<boolean>;
 
   // Drive Accounts
@@ -106,6 +111,8 @@ const fetchWithTimeout = async (resource: string | URL, options: RequestInit & {
 };
 
 const DRIVE_ACCOUNTS_STORAGE_KEY = 'base_connected_drives';
+const UNSYNCED_CHANGES_KEY = 'base_has_unsynced_changes';
+const LAST_SYNCED_KEY = 'base_last_synced';
 
 const loadDriveAccounts = (): DriveAccount[] => {
   try {
@@ -118,6 +125,72 @@ const loadDriveAccounts = (): DriveAccount[] => {
 
 const persistDriveAccounts = (accounts: DriveAccount[]) => {
   localStorage.setItem(DRIVE_ACCOUNTS_STORAGE_KEY, JSON.stringify(accounts));
+};
+
+const loadHasUnsyncedChanges = (): boolean => {
+  try {
+    return localStorage.getItem(UNSYNCED_CHANGES_KEY) === 'true';
+  } catch {
+    return false;
+  }
+};
+
+const loadLastSynced = (): number | null => {
+  try {
+    const val = localStorage.getItem(LAST_SYNCED_KEY);
+    return val ? parseInt(val, 10) : null;
+  } catch {
+    return null;
+  }
+};
+
+const DEVICE_ID_KEY = 'base_device_id';
+const SYNC_VERSION_KEY = 'base_sync_version';
+
+const getDeviceId = (): string => {
+  let id = localStorage.getItem(DEVICE_ID_KEY);
+  if (!id) {
+    id = crypto.randomUUID();
+    localStorage.setItem(DEVICE_ID_KEY, id);
+  }
+  return id;
+};
+
+const loadSyncVersion = (): number => {
+  try {
+    const val = localStorage.getItem(SYNC_VERSION_KEY);
+    return val ? parseInt(val, 10) : 0;
+  } catch {
+    return 0;
+  }
+};
+
+const enqueueSyncEvent = async (
+  entityType: 'workspace' | 'capture' | 'task' | 'resource' | 'knowledgeSource',
+  entityId: string,
+  operation: 'CREATE' | 'UPDATE' | 'DELETE',
+  payload: any
+) => {
+  const event = {
+    id: crypto.randomUUID(),
+    entityType,
+    entityId,
+    operation,
+    payload,
+    createdAt: Date.now(),
+    status: 'pending' as const,
+    retryCount: 0,
+    lastAttempt: null
+  };
+  await db.syncQueue.add(event);
+  
+  useBaseStore.setState({ hasUnsyncedChanges: true });
+  localStorage.setItem('base_has_unsynced_changes', 'true');
+
+  // Trigger sync queue processing asynchronously
+  useBaseStore.getState().processSyncQueue().catch(err => {
+    console.error('Failed to trigger background sync queue:', err);
+  });
 };
 
 const resolveWorkspaceId = async (
@@ -211,8 +284,12 @@ export const useBaseStore = create<BaseState>((set, get) => ({
   isMockAuth: true,
   user: null,
   syncStatus: 'idle',
-  lastSynced: null,
+  lastSynced: loadLastSynced(),
+  hasUnsyncedChanges: loadHasUnsyncedChanges(),
   isAuthLoading: true,
+  deviceId: getDeviceId(),
+  syncVersion: loadSyncVersion(),
+  deferredPrompt: null,
   connectedDriveAccounts: loadDriveAccounts(),
 
   setActiveWorkspaceId: (id) => {
@@ -257,13 +334,16 @@ export const useBaseStore = create<BaseState>((set, get) => ({
     };
     await db.workspaces.add(workspace);
     get().showCompanionMessage(`Workspace "${name}" created.`, 'success');
-    get().triggerSync();
+    await enqueueSyncEvent('workspace', id, 'CREATE', workspace);
     return id;
   },
 
   updateWorkspace: async (id, updates) => {
     await db.workspaces.update(id, { ...updates, updatedAt: Date.now() });
-    get().triggerSync();
+    const updated = await db.workspaces.get(id);
+    if (updated) {
+      await enqueueSyncEvent('workspace', id, 'UPDATE', updated);
+    }
   },
 
   updateWorkspaceUiState: async (id, uiState) => {
@@ -272,7 +352,10 @@ export const useBaseStore = create<BaseState>((set, get) => ({
       const currentUi = ws.uiState || {};
       const newUi = { ...currentUi, ...uiState };
       await db.workspaces.update(id, { uiState: newUi, updatedAt: Date.now() });
-      get().triggerSync();
+      const updated = await db.workspaces.get(id);
+      if (updated) {
+        await enqueueSyncEvent('workspace', id, 'UPDATE', updated);
+      }
     }
   },
 
@@ -285,7 +368,7 @@ export const useBaseStore = create<BaseState>((set, get) => ({
     });
     set({ activeWorkspaceId: null });
     get().showCompanionMessage('Workspace deleted.', 'info');
-    get().triggerSync();
+    await enqueueSyncEvent('workspace', id, 'DELETE', { id });
   },
 
   // ----------------------------------------------------
@@ -326,17 +409,23 @@ export const useBaseStore = create<BaseState>((set, get) => ({
     }
 
     get().showCompanionMessage('Auto-saved. Future-you says thanks.', 'success');
-    get().triggerSync();
+    await enqueueSyncEvent('capture', id, 'CREATE', capture);
   },
 
   updateCaptureWorkspace: async (id, workspaceId) => {
     await db.captures.update(id, { workspaceId });
-    get().triggerSync();
+    const updated = await db.captures.get(id);
+    if (updated) {
+      await enqueueSyncEvent('capture', id, 'UPDATE', updated);
+    }
   },
 
   updateCaptureContent: async (id, content) => {
     await db.captures.update(id, { content, lastOpenedAt: Date.now() });
-    get().triggerSync();
+    const updated = await db.captures.get(id);
+    if (updated) {
+      await enqueueSyncEvent('capture', id, 'UPDATE', updated);
+    }
   },
 
   visitCapture: async (id) => {
@@ -344,7 +433,10 @@ export const useBaseStore = create<BaseState>((set, get) => ({
     if (capture) {
       const visits = (capture.visitCount || 0) + 1;
       await db.captures.update(id, { visitCount: visits, lastOpenedAt: Date.now() });
-      get().triggerSync();
+      const updated = await db.captures.get(id);
+      if (updated) {
+        await enqueueSyncEvent('capture', id, 'UPDATE', updated);
+      }
     }
   },
 
@@ -357,13 +449,16 @@ export const useBaseStore = create<BaseState>((set, get) => ({
         importance === 1 ? 'Marked as important.' : 'Removed from important.',
         'info'
       );
-      get().triggerSync();
+      const updated = await db.captures.get(id);
+      if (updated) {
+        await enqueueSyncEvent('capture', id, 'UPDATE', updated);
+      }
     }
   },
 
   deleteCapture: async (id) => {
     await db.captures.delete(id);
-    get().triggerSync();
+    await enqueueSyncEvent('capture', id, 'DELETE', { id });
   },
 
   // ----------------------------------------------------
@@ -384,7 +479,7 @@ export const useBaseStore = create<BaseState>((set, get) => ({
     };
     await db.tasks.add(task);
     get().showCompanionMessage('Task added to list.', 'success');
-    get().triggerSync();
+    await enqueueSyncEvent('task', id, 'CREATE', task);
   },
 
   toggleTask: async (id) => {
@@ -398,13 +493,16 @@ export const useBaseStore = create<BaseState>((set, get) => ({
       if (completed) {
         get().showCompanionMessage("Task finished. One step closer!", 'success');
       }
-      get().triggerSync();
+      const updated = await db.tasks.get(id);
+      if (updated) {
+        await enqueueSyncEvent('task', id, 'UPDATE', updated);
+      }
     }
   },
 
   deleteTask: async (id) => {
     await db.tasks.delete(id);
-    get().triggerSync();
+    await enqueueSyncEvent('task', id, 'DELETE', { id });
   },
 
   // ----------------------------------------------------
@@ -424,7 +522,7 @@ export const useBaseStore = create<BaseState>((set, get) => ({
       extractedText
     };
     await db.resources.add(resource);
-    get().triggerSync();
+    await enqueueSyncEvent('resource', id, 'CREATE', resource);
   },
 
   toggleResourcePin: async (id) => {
@@ -435,13 +533,16 @@ export const useBaseStore = create<BaseState>((set, get) => ({
         resource.pinned ? 'Resource unpinned.' : 'Resource pinned to Home.',
         'info'
       );
-      get().triggerSync();
+      const updated = await db.resources.get(id);
+      if (updated) {
+        await enqueueSyncEvent('resource', id, 'UPDATE', updated);
+      }
     }
   },
 
   deleteResource: async (id) => {
     await db.resources.delete(id);
-    get().triggerSync();
+    await enqueueSyncEvent('resource', id, 'DELETE', { id });
   },
 
   // ----------------------------------------------------
@@ -462,10 +563,18 @@ export const useBaseStore = create<BaseState>((set, get) => ({
           user: data.user,
           isAuthLoading: false
         });
-        // Run sync on successful login detection
-        get().triggerSync();
+        
         // Fetch connected drives
-        get().fetchConnectedDrives();
+        await get().fetchConnectedDrives();
+
+        // New Device Recovery Flow: if no local workspaces exist, restore from cloud
+        const workspaces = await db.workspaces.toArray();
+        if (workspaces.length === 0) {
+          console.log('[Sync] New device detected or empty database. Restoring from cloud backup...');
+          await get().restoreBackupFromDrive();
+        } else {
+          get().processSyncQueue();
+        }
       } else {
         set({ isAuthenticated: false, user: null, isAuthLoading: false });
       }
@@ -519,7 +628,14 @@ export const useBaseStore = create<BaseState>((set, get) => ({
         isAuthLoading: false
       });
       get().showCompanionMessage(`Welcome back, ${data.user?.name || 'user'}!`, 'success');
-      get().triggerSync();
+      
+      const workspaces = await db.workspaces.toArray();
+      if (workspaces.length === 0) {
+        console.log('[Sync] New device login detected or empty database. Restoring from cloud backup...');
+        await get().restoreBackupFromDrive();
+      } else {
+        get().processSyncQueue();
+      }
       return true;
     } catch (error: any) {
       console.error('Email login error:', error);
@@ -634,18 +750,25 @@ export const useBaseStore = create<BaseState>((set, get) => ({
         method: 'POST',
         credentials: 'include'
       });
-      set({ isAuthenticated: false, user: null });
+      set({ isAuthenticated: false, user: null, hasUnsyncedChanges: false });
+      localStorage.setItem('base_has_unsynced_changes', 'false');
       get().showCompanionMessage('Logged out. Your data remains safe locally.', 'info');
     } catch (error) {
       console.error('Failed to log out:', error);
       // Hard logout locally
-      set({ isAuthenticated: false, user: null });
+      set({ isAuthenticated: false, user: null, hasUnsyncedChanges: false });
+      localStorage.setItem('base_has_unsynced_changes', 'false');
     }
   },
 
-  triggerSync: async () => {
+  triggerSync: async (isMutation) => {
     const { isAuthenticated, syncStatus } = get();
     if (!isAuthenticated || syncStatus === 'syncing') return;
+
+    if (isMutation) {
+      set({ hasUnsyncedChanges: true });
+      localStorage.setItem('base_has_unsynced_changes', 'true');
+    }
 
     set({ syncStatus: 'syncing' });
 
@@ -674,13 +797,134 @@ export const useBaseStore = create<BaseState>((set, get) => ({
       });
 
       if (response.ok) {
-        set({ syncStatus: 'success', lastSynced: Date.now() });
+        const now = Date.now();
+        set({ 
+          syncStatus: 'success', 
+          lastSynced: now,
+          hasUnsyncedChanges: false 
+        });
+        localStorage.setItem('base_has_unsynced_changes', 'false');
+        localStorage.setItem('base_last_synced', now.toString());
         console.log('[Sync] Data successfully backed up to cloud.');
       } else {
         set({ syncStatus: 'error' });
       }
     } catch (error) {
       console.error('[Sync] Background sync error:', error);
+      set({ syncStatus: 'error' });
+    }
+  },
+
+  processSyncQueue: async () => {
+    const { isAuthenticated, syncStatus, deviceId, syncVersion } = get();
+    if (!isAuthenticated || syncStatus === 'syncing') return;
+
+    const pendingEvents = await db.syncQueue
+      .where('status')
+      .anyOf(['pending', 'failed'])
+      .toArray();
+
+    if (pendingEvents.length === 0) {
+      return;
+    }
+
+    set({ syncStatus: 'syncing' });
+
+    try {
+      const eventIds = pendingEvents.map(e => e.id);
+      await db.syncQueue.where('id').anyOf(eventIds).modify({ status: 'syncing', lastAttempt: Date.now() });
+
+      const apiEvents = pendingEvents.map(e => {
+        const payloadStr = JSON.stringify(e.payload || {});
+        let hash = 0;
+        for (let i = 0; i < payloadStr.length; i++) {
+          const chr = payloadStr.charCodeAt(i);
+          hash = ((hash << 5) - hash) + chr;
+          hash |= 0;
+        }
+        
+        return {
+          type: `${e.entityType}_${e.operation.toLowerCase()}`,
+          id: e.entityId,
+          timestamp: e.createdAt,
+          hash: hash.toString(16),
+          data: e.payload
+        };
+      });
+
+      const eventsResponse = await fetch(`${BACKEND_URL}/api/sync/events`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          deviceId,
+          syncVersion,
+          events: apiEvents
+        }),
+        credentials: 'include'
+      });
+
+      if (!eventsResponse.ok) {
+        throw new Error('Failed to upload metadata events');
+      }
+
+      const eventsData = await eventsResponse.json();
+      const newVersion = eventsData.newSyncVersion || syncVersion;
+
+      set({ syncVersion: newVersion });
+      localStorage.setItem('base_sync_version', newVersion.toString());
+
+      const workspaces = await db.workspaces.toArray();
+      const captures = await db.captures.toArray();
+      const tasks = await db.tasks.toArray();
+      const resources = await db.resources.toArray();
+      const dump = { workspaces, captures, tasks, resources };
+
+      const activeAccount = get().connectedDriveAccounts.find(acc => acc.isActive);
+      const email = activeAccount ? activeAccount.email : undefined;
+
+      const backupResponse = await fetch(`${BACKEND_URL}/api/sync/upload`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          data: dump,
+          timestamp: Date.now(),
+          email: email
+        }),
+        credentials: 'include'
+      });
+
+      if (!backupResponse.ok) {
+        throw new Error('Failed to generate cloud backup');
+      }
+
+      await db.syncQueue.where('id').anyOf(eventIds).delete();
+
+      const now = Date.now();
+      set({ 
+        syncStatus: 'success', 
+        lastSynced: now,
+        hasUnsyncedChanges: false 
+      });
+      localStorage.setItem('base_has_unsynced_changes', 'false');
+      localStorage.setItem('base_last_synced', now.toString());
+
+      console.log('[Sync Worker] Background sync completed successfully.');
+    } catch (error) {
+      console.error('[Sync Worker] Background sync error:', error);
+      
+      const syncingEvents = await db.syncQueue
+        .where('status')
+        .equals('syncing')
+        .toArray();
+      
+      for (const e of syncingEvents) {
+        await db.syncQueue.update(e.id, {
+          status: 'failed',
+          retryCount: e.retryCount + 1,
+          lastAttempt: Date.now()
+        });
+      }
+
       set({ syncStatus: 'error' });
     }
   },
@@ -725,7 +969,14 @@ export const useBaseStore = create<BaseState>((set, get) => ({
         if (data.knowledgeSources) await db.knowledgeSources.bulkAdd(data.knowledgeSources);
       });
 
-      set({ syncStatus: 'success', lastSynced: Date.now() });
+      const now = Date.now();
+      set({ 
+        syncStatus: 'success', 
+        lastSynced: now,
+        hasUnsyncedChanges: false 
+      });
+      localStorage.setItem('base_has_unsynced_changes', 'false');
+      localStorage.setItem('base_last_synced', now.toString());
       get().showCompanionMessage('Successfully restored data backup from Google Drive!', 'success');
       return true;
     } catch (error: any) {
