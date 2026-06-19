@@ -99,6 +99,24 @@ const getBackendUrl = () => {
 };
 
 export const BACKEND_URL = import.meta.env.VITE_API_URL || getBackendUrl();
+
+const fetchWithTimeout = async (resource: string | URL, options: RequestInit & { timeout?: number } = {}) => {
+  const { timeout = 8000, ...customOptions } = options;
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeout);
+  try {
+    const response = await fetch(resource, {
+      ...customOptions,
+      signal: controller.signal
+    });
+    clearTimeout(id);
+    return response;
+  } catch (error) {
+    clearTimeout(id);
+    throw error;
+  }
+};
+
 const DRIVE_ACCOUNTS_STORAGE_KEY = 'base_connected_drives';
 
 const loadDriveAccounts = (): DriveAccount[] => {
@@ -444,8 +462,9 @@ export const useBaseStore = create<BaseState>((set, get) => ({
   checkAuthStatus: async () => {
     set({ isAuthLoading: true });
     try {
-      const response = await fetch(`${BACKEND_URL}/api/auth/google/status`, {
-        credentials: 'include'
+      const response = await fetchWithTimeout(`${BACKEND_URL}/api/auth/google/status`, {
+        credentials: 'include',
+        timeout: 5000
       });
       const data = await response.json();
       if (data.isAuthenticated) {
