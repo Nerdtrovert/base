@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useBaseStore } from '../store/useBaseStore';
 import { HardDrive, RefreshCw } from 'lucide-react';
 import { Button } from './ui/button';
+import { db } from '../services/db';
 
 export const StorageHealth: React.FC = () => {
   const { syncStatus, lastSynced, connectedDriveAccounts, triggerSync } = useBaseStore();
@@ -55,6 +56,85 @@ export const StorageHealth: React.FC = () => {
     if (isSyncEnabled && syncStatus !== 'syncing') {
       await triggerSync();
     }
+  };
+
+  const handleDownloadLocalBackup = async () => {
+    try {
+      const workspaces = await db.workspaces.toArray();
+      const captures = await db.captures.toArray();
+      const tasks = await db.tasks.toArray();
+      const resources = await db.resources.toArray();
+      const knowledgeSources = await db.knowledgeSources.toArray();
+
+      const backupData = {
+        version: 1,
+        timestamp: Date.now(),
+        data: {
+          workspaces,
+          captures,
+          tasks,
+          resources,
+          knowledgeSources
+        }
+      };
+
+      const jsonString = `data:text/json;charset=utf-8,${encodeURIComponent(
+        JSON.stringify(backupData, null, 2)
+      )}`;
+      const downloadAnchor = document.createElement('a');
+      downloadAnchor.setAttribute('href', jsonString);
+      const dateStr = new Date().toISOString().split('T')[0];
+      downloadAnchor.setAttribute('download', `base_backup_${dateStr}.json`);
+      document.body.appendChild(downloadAnchor);
+      downloadAnchor.click();
+      downloadAnchor.remove();
+
+      useBaseStore.getState().showCompanionMessage('Local database backup downloaded successfully!', 'success');
+    } catch (e) {
+      console.error('Failed to export local database backup:', e);
+      useBaseStore.getState().showCompanionMessage('Failed to download local backup.', 'warning');
+    }
+  };
+
+  const handleRestoreLocalBackup = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      try {
+        const backupData = JSON.parse(event.target?.result as string);
+        if (!backupData.data || !backupData.version) {
+          throw new Error('Invalid backup file format');
+        }
+
+        const data = backupData.data;
+
+        await db.transaction('rw', [db.workspaces, db.captures, db.tasks, db.resources, db.knowledgeSources], async () => {
+          await db.workspaces.clear();
+          await db.captures.clear();
+          await db.tasks.clear();
+          await db.resources.clear();
+          await db.knowledgeSources.clear();
+
+          if (data.workspaces) await db.workspaces.bulkAdd(data.workspaces);
+          if (data.captures) await db.captures.bulkAdd(data.captures);
+          if (data.tasks) await db.tasks.bulkAdd(data.tasks);
+          if (data.resources) await db.resources.bulkAdd(data.resources);
+          if (data.knowledgeSources) await db.knowledgeSources.bulkAdd(data.knowledgeSources);
+        });
+
+        useBaseStore.getState().showCompanionMessage('Local database backup restored successfully!', 'success');
+        
+        setTimeout(() => {
+          window.location.reload();
+        }, 1500);
+      } catch (err) {
+        console.error('Failed to restore local backup:', err);
+        useBaseStore.getState().showCompanionMessage('Failed to restore backup: Invalid file.', 'warning');
+      }
+    };
+    reader.readAsText(file);
   };
 
   return (
@@ -115,7 +195,7 @@ export const StorageHealth: React.FC = () => {
             <span className="text-xs font-bold uppercase tracking-wider">Local Only</span>
           </div>
 
-          <div className="space-y-1.5 pl-1.5 border-l border-border-color text-xs text-text-secondary font-medium leading-relaxed">
+          <div className="space-y-1.5 pl-1.5 border-l border-border-color text-xs text-text-secondary font-medium leading-relaxed font-normal">
             <p className="text-text-primary">Encrypted locally</p>
             <p>Your files stay on this device until you connect backup.</p>
             <p className="text-text-muted text-[10px]">Only you control access right now.</p>
@@ -133,7 +213,7 @@ export const StorageHealth: React.FC = () => {
             <span className="text-xs font-bold uppercase tracking-wider animate-pulse">Syncing</span>
           </div>
 
-          <div className="space-y-1.5 pl-1.5 border-l border-border-color text-xs text-text-secondary font-medium leading-relaxed">
+          <div className="space-y-1.5 pl-1.5 border-l border-border-color text-xs text-text-secondary font-medium leading-relaxed font-normal">
             <p className="font-semibold text-text-primary">Encrypted locally</p>
             <p>Backing up to your Drive in the background...</p>
             <p className="text-text-muted text-[10px]">Only you control access while this finishes.</p>
@@ -151,7 +231,7 @@ export const StorageHealth: React.FC = () => {
             <span className="text-xs font-bold uppercase tracking-wider">Attention</span>
           </div>
 
-          <div className="space-y-1.5 pl-1.5 border-l border-border-color text-xs text-text-secondary font-medium leading-relaxed">
+          <div className="space-y-1.5 pl-1.5 border-l border-border-color text-xs text-text-secondary font-medium leading-relaxed font-normal">
             <p className="font-semibold text-rose-600 dark:text-rose-400">Unable to reach Google Drive.</p>
             <p className="text-text-primary">Encrypted locally</p>
             <p>Local data is still safe, and backup will retry automatically.</p>
@@ -159,6 +239,48 @@ export const StorageHealth: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Action Buttons */}
+      <div className="flex flex-col gap-2 pt-2 border-t border-border-color/50">
+        {isSyncEnabled && (
+          <Button
+            onClick={handleManualBackup}
+            disabled={syncStatus === 'syncing'}
+            className="w-full h-8 text-[11px] font-semibold bg-accent hover:bg-accent/90 text-white rounded-xl flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
+          >
+            <RefreshCw className={`w-3 h-3 ${syncStatus === 'syncing' ? 'animate-spin' : ''}`} />
+            <span>{syncStatus === 'syncing' ? 'Backing up...' : 'Backup to Cloud Now'}</span>
+          </Button>
+        )}
+        
+        <div className="flex gap-2">
+          <Button
+            onClick={handleDownloadLocalBackup}
+            variant="outline"
+            className="flex-1 h-8 text-[10px] font-semibold border-border-color hover:border-accent text-text-secondary flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
+          >
+            <HardDrive className="w-3 h-3 text-accent animate-pulse" />
+            <span>Download Backup</span>
+          </Button>
+
+          <div className="relative flex-1">
+            <input
+              type="file"
+              accept=".json"
+              onChange={handleRestoreLocalBackup}
+              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+              title="Restore local backup file"
+            />
+            <Button
+              variant="outline"
+              className="w-full h-8 text-[10px] font-semibold border-border-color hover:border-accent text-text-secondary flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
+            >
+              <RefreshCw className="w-3 h-3 text-accent" />
+              <span>Restore Backup</span>
+            </Button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 };

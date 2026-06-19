@@ -57,7 +57,9 @@ export interface KnowledgeSource {
   id: string;
   name: string;
   folderId: string;
-  googleEmail: string;
+  googleEmail?: string;
+  sourceType?: 'gdrive' | 'local';
+  localPath?: string;
   createdAt: number;
 }
 

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useBaseStore } from '../store/useBaseStore';
 import { db, type Workspace, type Task } from '../services/db';
+import { useLiveQuery } from 'dexie-react-hooks';
 import { 
   Menu, X, Cloud, Plus, Trash2, Folder, Calendar, 
   ArrowRight, ChevronLeft, ChevronRight, CheckSquare, 
@@ -30,6 +31,9 @@ export const HamburgerMenu: React.FC = () => {
     showCompanionMessage
   } = useBaseStore();
   const navigate = useNavigate();
+
+  const knowledgeSources = useLiveQuery(() => db.knowledgeSources.toArray()) || [];
+  const localFolders = knowledgeSources.filter(ks => ks.sourceType === 'local');
 
   const [isOpen, setIsOpen] = useState(false);
   
@@ -136,6 +140,62 @@ export const HamburgerMenu: React.FC = () => {
         console.error('Failed to initiate Google Drive connection:', error);
         showCompanionMessage('Unable to connect to OAuth server.', 'warning');
       }
+    }
+  };
+
+  const handleAddLocalFolder = async () => {
+    try {
+      if ('showDirectoryPicker' in window) {
+        const handle = await (window as any).showDirectoryPicker();
+        const folderName = handle.name;
+        
+        await db.knowledgeSources.add({
+          id: crypto.randomUUID(),
+          name: folderName,
+          folderId: `local-${crypto.randomUUID()}`,
+          sourceType: 'local',
+          localPath: folderName,
+          createdAt: Date.now()
+        });
+        showCompanionMessage(`Mounted local folder: ${folderName}`, 'success');
+      } else {
+        // Fallback for mobile and other browsers
+        const input = document.createElement('input');
+        input.type = 'file';
+        (input as any).webkitdirectory = true;
+        (input as any).directory = true;
+        input.multiple = true;
+        
+        input.onchange = async (e: any) => {
+          const files = e.target.files;
+          if (files && files.length > 0) {
+            const relativePath = files[0].webkitRelativePath;
+            const folderName = relativePath.split('/')[0] || 'Local Folder';
+            
+            await db.knowledgeSources.add({
+              id: crypto.randomUUID(),
+              name: folderName,
+              folderId: `local-${crypto.randomUUID()}`,
+              sourceType: 'local',
+              localPath: folderName,
+              createdAt: Date.now()
+            });
+            showCompanionMessage(`Mounted local folder: ${folderName}`, 'success');
+          }
+        };
+        input.click();
+      }
+    } catch (err: any) {
+      console.warn('Local folder pick cancelled or failed:', err);
+    }
+  };
+
+  const handleRemoveLocalFolder = async (id: string, name: string) => {
+    try {
+      await db.knowledgeSources.delete(id);
+      showCompanionMessage(`Disconnected local folder: ${name}`, 'info');
+    } catch (err) {
+      console.error('Failed to remove local folder:', err);
     }
   };
 
@@ -431,6 +491,59 @@ export const HamburgerMenu: React.FC = () => {
                         </div>
                       </form>
                     )}
+                  </div>
+
+                  {/* 3.5 Local Folders Section */}
+                  <div className="space-y-4 pt-2">
+                    <div className="text-[10px] font-bold text-text-secondary uppercase tracking-[0.2em] flex items-center justify-between">
+                      <span>LOCAL FOLDERS</span>
+                      <span className="text-[9px] font-normal lowercase text-text-secondary/70">(offline only)</span>
+                    </div>
+
+                    {/* Local folders list */}
+                    <div className="space-y-2">
+                      {localFolders.map((folder) => (
+                        <div 
+                          key={folder.id} 
+                          className="p-3 rounded-xl border border-border-color bg-bg-app/20 flex items-center justify-between gap-2 transition-all text-left"
+                        >
+                          <div className="min-w-0">
+                            <p className="text-[11px] font-semibold text-text-primary truncate">{folder.name}</p>
+                            <p className="text-[9px] text-text-secondary mt-0.5 flex items-center gap-1">
+                              <Folder className="w-2.5 h-2.5 text-accent" />
+                              <span>Local device folder</span>
+                            </p>
+                          </div>
+                          
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveLocalFolder(folder.id, folder.name)}
+                            className="p-1.5 rounded-lg border border-border-color text-rose-500 hover:bg-rose-500/5 cursor-pointer transition-colors"
+                            title="Unmount Folder"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ))}
+
+                      {localFolders.length === 0 && (
+                        <div className="text-center py-4 border border-dashed border-border-color rounded-xl bg-bg-app/20">
+                          <Folder className="w-5 h-5 mx-auto text-text-secondary/50 mb-1" />
+                          <p className="text-[10px] text-text-secondary px-4">No local folders mounted yet.</p>
+                        </div>
+                      )}
+                    </div>
+
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={handleAddLocalFolder}
+                      className="w-full gap-2 border-dashed border-border-color hover:border-accent/50 text-[11px] text-text-secondary"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Mount Local Folder</span>
+                    </Button>
                   </div>
 
                   {/* 4. Notifications Setup Section */}

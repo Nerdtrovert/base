@@ -4,7 +4,7 @@ import { useBaseStore, BACKEND_URL } from '../store/useBaseStore';
 import { db } from '../services/db';
 import { motion, AnimatePresence } from 'framer-motion';
 import { BrandMark } from '../components/BrandMark';
-import { ArrowRight, ArrowLeft, HardDrive, Check, ShieldCheck, FolderPlus, Info } from 'lucide-react';
+import { ArrowRight, ArrowLeft, HardDrive, Check, ShieldCheck, FolderPlus, Info, FolderOpen, AlertCircle } from 'lucide-react';
 import { Button } from '../components/ui/button';
 
 export const Onboarding: React.FC = () => {
@@ -111,6 +111,7 @@ export const Onboarding: React.FC = () => {
           name,
           folderId: matched?.id || `gdrive-id-${name.toLowerCase().replace(/\s+/g, '-')}`,
           googleEmail: googleEmail,
+          sourceType: 'gdrive',
           createdAt: Date.now(),
         });
       }
@@ -127,6 +128,69 @@ export const Onboarding: React.FC = () => {
       console.error(err);
       setIsMounting(false);
       showCompanionMessage('Failed to mount Knowledge Sources.', 'warning');
+    }
+  };
+
+  const handleMountLocalFolder = async () => {
+    setIsMounting(true);
+    try {
+      if ('showDirectoryPicker' in window) {
+        const handle = await (window as any).showDirectoryPicker();
+        const folderName = handle.name;
+        
+        await db.knowledgeSources.add({
+          id: crypto.randomUUID(),
+          name: folderName,
+          folderId: `local-${crypto.randomUUID()}`,
+          sourceType: 'local',
+          localPath: folderName,
+          createdAt: Date.now()
+        });
+        
+        setIsMounting(false);
+        setMountedSuccess(true);
+        showCompanionMessage('Local folder mounted successfully!', 'success');
+        setTimeout(() => {
+          navigate('/', { replace: true });
+        }, 1500);
+      } else {
+        // Fallback for mobile and other browsers
+        const input = document.createElement('input');
+        input.type = 'file';
+        (input as any).webkitdirectory = true;
+        (input as any).directory = true;
+        input.multiple = true;
+        
+        input.onchange = async (e: any) => {
+          const files = e.target.files;
+          if (files && files.length > 0) {
+            const relativePath = files[0].webkitRelativePath;
+            const folderName = relativePath.split('/')[0] || 'Local Folder';
+            
+            await db.knowledgeSources.add({
+              id: crypto.randomUUID(),
+              name: folderName,
+              folderId: `local-${crypto.randomUUID()}`,
+              sourceType: 'local',
+              localPath: folderName,
+              createdAt: Date.now()
+            });
+            
+            setIsMounting(false);
+            setMountedSuccess(true);
+            showCompanionMessage('Local folder mounted successfully!', 'success');
+            setTimeout(() => {
+              navigate('/', { replace: true });
+            }, 1500);
+          } else {
+            setIsMounting(false);
+          }
+        };
+        input.click();
+      }
+    } catch (err: any) {
+      console.warn('Local folder pick cancelled or failed:', err);
+      setIsMounting(false);
     }
   };
 
@@ -246,7 +310,7 @@ export const Onboarding: React.FC = () => {
                 <div className="text-center">
                   <h2 className="text-lg font-bold text-text-primary">Knowledge Sources</h2>
                   <p className="text-xs text-text-secondary mt-1">
-                    Choose the folders that Base should remember.
+                    Choose the storage method and folders Base should remember.
                   </p>
                 </div>
 
@@ -259,30 +323,69 @@ export const Onboarding: React.FC = () => {
                     <p className="text-xs text-text-secondary">Mounting your secure memory layer. Redirecting to home...</p>
                   </div>
                 ) : !isDriveConnected ? (
-                  /* Calm Setup Card */
-                  <div className="border border-border-color bg-bg-app/30 p-5 rounded-2xl space-y-4 flex flex-col items-center text-center max-w-sm mx-auto shadow-xs">
-                    <div className="space-y-1">
-                      <h4 className="text-sm font-bold text-text-primary">Protect your workspace</h4>
-                      <p className="text-[11px] text-text-secondary leading-normal">
-                        Your notes stay on your device.<br/>
-                        Your resources stay in your own cloud storage.
-                      </p>
+                  /* Storage Choices Cards */
+                  <div className="space-y-4 max-w-sm mx-auto">
+                    {/* Google Drive Option */}
+                    <div className="border border-border-color bg-bg-app/20 p-4.5 rounded-2xl space-y-3 shadow-xs hover:border-accent/30 transition-all text-left">
+                      <div className="space-y-1">
+                        <h4 className="text-xs font-bold text-text-primary flex items-center gap-1.5">
+                          <HardDrive className="w-3.5 h-3.5 text-accent" />
+                          <span>Google Drive Sync (Cloud Backup)</span>
+                        </h4>
+                        <p className="text-[10px] text-text-secondary leading-normal">
+                          Files remain in your cloud storage. Notes and indexing metadata sync automatically across all your devices.
+                        </p>
+                      </div>
+
+                      <Button
+                        onClick={handleConnectDrive}
+                        disabled={isConnecting || isMounting}
+                        className="w-full bg-accent hover:bg-accent/90 text-white font-semibold h-9 rounded-xl flex items-center justify-center gap-2 cursor-pointer shadow-sm text-xs"
+                      >
+                        {isConnecting ? (
+                          <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                        ) : (
+                          <>
+                            <HardDrive className="w-3.5 h-3.5" />
+                            <span>Connect Google Drive</span>
+                          </>
+                        )}
+                      </Button>
                     </div>
 
-                    <Button
-                      onClick={handleConnectDrive}
-                      disabled={isConnecting}
-                      className="w-full bg-accent hover:bg-accent/90 text-white font-semibold h-10 rounded-xl flex items-center justify-center gap-2 cursor-pointer shadow-sm shadow-accent/15"
-                    >
-                      {isConnecting ? (
-                        <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                      ) : (
-                        <>
-                          <HardDrive className="w-4 h-4" />
-                          <span>Connect Google Drive</span>
-                        </>
-                      )}
-                    </Button>
+                    {/* Local Folder Option */}
+                    <div className="border border-border-color bg-bg-app/20 p-4.5 rounded-2xl space-y-3 shadow-xs hover:border-accent/30 transition-all text-left">
+                      <div className="space-y-1">
+                        <h4 className="text-xs font-bold text-text-primary flex items-center gap-1.5">
+                          <FolderOpen className="w-3.5 h-3.5 text-accent" />
+                          <span>Local Device Folders (Offline Indexing)</span>
+                        </h4>
+                        <p className="text-[10px] text-text-secondary leading-normal">
+                          Mount directories directly from your local storage. Highly secure and private.
+                        </p>
+                        <div className="bg-amber-500/5 border border-amber-500/10 rounded-lg p-2 flex items-start gap-1.5 mt-1.5">
+                          <AlertCircle className="w-3 h-3 text-amber-500 shrink-0 mt-0.5" />
+                          <p className="text-[9px] text-amber-600 dark:text-amber-400 leading-normal">
+                            <strong>Note</strong>: This is locally stored information and <strong>will not work multi-device</strong>. Files on mobile/laptop stay on their respective devices.
+                          </p>
+                        </div>
+                      </div>
+
+                      <Button
+                        onClick={handleMountLocalFolder}
+                        disabled={isConnecting || isMounting}
+                        className="w-full bg-bg-app border border-border-color hover:border-accent text-text-primary font-semibold h-9 rounded-xl flex items-center justify-center gap-2 cursor-pointer shadow-xs text-xs"
+                      >
+                        {isMounting ? (
+                          <span className="w-4 h-4 border-2 border-accent/30 border-t-accent rounded-full animate-spin" />
+                        ) : (
+                          <>
+                            <FolderOpen className="w-3.5 h-3.5" />
+                            <span>Mount Local Folder</span>
+                          </>
+                        )}
+                      </Button>
+                    </div>
                   </div>
                 ) : (
                   /* Folder Picker */
