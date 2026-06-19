@@ -46,19 +46,28 @@ export const WorkspaceList: React.FC = () => {
     handleOpenWorkspace(id);
   };
 
+  const handleDeleteWorkspace = async (id: string, name: string) => {
+    const confirmed = window.confirm(
+      `Delete "${name}"?\n\nThe workspace will be removed from this view, but your last synced files are still recoverable for 30 days.`
+    );
+
+    if (!confirmed) return;
+    await deleteWorkspace(id);
+  };
+
   return (
     <div className="pb-6 border-b border-border-color space-y-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2 text-xs font-semibold tracking-[0.18em] text-text-secondary uppercase">
           <Folder className="w-4 h-4 text-accent" />
-          <span>Workspaces</span>
+          <span>Focus Mode</span>
         </div>
           <Button
             variant="ghost"
             size="icon"
             onClick={() => setShowAddForm(!showAddForm)}
             className="h-8 w-8 text-accent"
-            title="Create Workspace"
+            title="Create Focus Mode"
           >
             <FolderPlus className="w-4 h-4" />
           </Button>
@@ -75,9 +84,9 @@ export const WorkspaceList: React.FC = () => {
             className="space-y-3 p-3 bg-bg-app border border-border-color rounded-[28px] overflow-hidden"
           >
             <div>
-              <label className="block text-[10px] font-semibold text-text-secondary uppercase mb-1">Workspace Name</label>
+              <label className="block text-[10px] font-semibold text-text-secondary uppercase mb-1">Focus Mode Name</label>
               <Input
-                placeholder="CS-101, Personal Diary, etc."
+                placeholder="MQTT Integration, CS-101, etc."
                 value={newWsName}
                 onChange={(e) => setNewWsName(e.target.value)}
                 className="h-8 bg-card-bg text-xs rounded-xl"
@@ -87,7 +96,7 @@ export const WorkspaceList: React.FC = () => {
             <div>
               <label className="block text-[10px] font-semibold text-text-secondary uppercase mb-1">Description (Optional)</label>
               <Input
-                placeholder="What is this workspace about?"
+                placeholder="What is this focus mode about?"
                 value={newWsDesc}
                 onChange={(e) => setNewWsDesc(e.target.value)}
                 className="h-8 bg-card-bg text-xs rounded-xl"
@@ -117,7 +126,7 @@ export const WorkspaceList: React.FC = () => {
 
       {sortedWorkspaces.length === 0 ? (
         <div className="py-6 text-center text-xs text-text-secondary italic">
-          No workspaces yet. Create one to begin organizing.
+          No focus modes yet. Create one to begin organizing.
         </div>
       ) : (
         <motion.div className="space-y-1.5 max-h-56 overflow-y-auto pr-1" layout>
@@ -156,9 +165,12 @@ export const WorkspaceList: React.FC = () => {
                   <Button
                     variant="ghost"
                     size="icon"
-                    onClick={(e) => { e.stopPropagation(); deleteWorkspace(ws.id); }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDeleteWorkspace(ws.id, ws.name);
+                    }}
                     className="h-7 w-7 p-0 text-text-secondary hover:text-rose-500 rounded opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
-                    title="Delete workspace"
+                    title="Delete focus mode. Your last synced files remain recoverable for 30 days."
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                   </Button>

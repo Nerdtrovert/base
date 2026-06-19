@@ -1,6 +1,7 @@
 import React from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../services/db';
+import { useBaseStore } from '../store/useBaseStore';
 import { MessageSquare, Link, Image, CheckCircle, FileText, Trash2, Clock } from 'lucide-react';
 import { Button } from './ui/button';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -15,10 +16,17 @@ interface TimelineItem {
 }
 
 export const RecentActivity: React.FC = () => {
+  const { activeWorkspaceId } = useBaseStore();
   const activityItems = useLiveQuery(async () => {
-    const captures = await db.captures.toArray();
-    const resources = await db.resources.toArray();
-    const tasks = await db.tasks.toArray();
+    let captures = await db.captures.toArray();
+    let resources = await db.resources.toArray();
+    let tasks = await db.tasks.toArray();
+
+    if (activeWorkspaceId) {
+      captures = captures.filter(c => c.workspaceId === activeWorkspaceId);
+      resources = resources.filter(r => r.workspaceId === activeWorkspaceId);
+      tasks = tasks.filter(t => t.workspaceId === activeWorkspaceId);
+    }
 
     const items: TimelineItem[] = [];
 
@@ -90,6 +98,12 @@ export const RecentActivity: React.FC = () => {
   const groupedActivity = groupTimeline(activityItems.slice(0, 15));
 
   const handleDeleteItem = async (item: TimelineItem) => {
+    const confirmed = window.confirm(
+      `Remove this activity item?\n\nIf it was synced earlier, the recent version is still recoverable for 30 days.`
+    );
+
+    if (!confirmed) return;
+
     if (item.type === 'task-completed') {
       await db.tasks.delete(item.id);
     } else if (item.type === 'resource-added') {

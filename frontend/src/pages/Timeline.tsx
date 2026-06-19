@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../services/db';
 import { 
@@ -9,16 +9,14 @@ import {
   FileText, 
   Trash2, 
   Search, 
-  Folder, 
   X,
   ChevronLeft,
   Clock
 } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { Card, CardContent } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
-import { motion, AnimatePresence } from 'framer-motion';
 
 interface TimelineItem {
   id: string;
@@ -31,11 +29,28 @@ interface TimelineItem {
   workspaceName?: string;
 }
 
+interface LearningSession {
+  id: string;
+  timestamp: number;
+  name: string;
+  items: TimelineItem[];
+}
+
 export const Timeline: React.FC = () => {
   const navigate = useNavigate();
+  const { search } = useLocation();
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string>('all');
   const [dateFilter, setDateFilter] = useState<'all' | 'today' | 'week' | 'month'>('all');
   const [searchTerm, setSearchTerm] = useState<string>('');
+
+  // Parse search parameter from tag navigation
+  useEffect(() => {
+    const params = new URLSearchParams(search);
+    const q = params.get('search');
+    if (q) {
+      setSearchTerm(q);
+    }
+  }, [search]);
 
   const data = useLiveQuery(async () => {
     const workspaces = await db.workspaces.toArray();
@@ -49,9 +64,14 @@ export const Timeline: React.FC = () => {
     const items: TimelineItem[] = [];
 
     captures.forEach(c => {
+      let type: TimelineItem['type'] = 'idea';
+      if (c.type === 'note') type = 'note';
+      else if (c.type === 'image') type = 'image';
+      else if (c.type === 'link') type = 'link';
+
       items.push({
         id: c.id,
-        type: c.type,
+        type,
         title: c.content || (c.type === 'image' ? 'Captured Image' : 'Idea'),
         timestamp: c.createdAt,
         url: c.url,
@@ -65,7 +85,7 @@ export const Timeline: React.FC = () => {
         items.push({
           id: r.id,
           type: 'resource-added',
-          title: `Added Resource: ${r.title}`,
+          title: r.title,
           subtitle: r.type.toUpperCase(),
           timestamp: r.createdAt,
           url: r.url,
@@ -80,7 +100,7 @@ export const Timeline: React.FC = () => {
         items.push({
           id: t.id,
           type: 'task-completed',
-          title: `Completed Task: ${t.title}`,
+          title: t.title,
           timestamp: t.completedAt,
           workspaceId: t.workspaceId,
           workspaceName: t.workspaceId ? workspaceMap.get(t.workspaceId) : undefined
@@ -88,6 +108,7 @@ export const Timeline: React.FC = () => {
       }
     });
 
+    // Sort descending globally
     items.sort((a, b) => b.timestamp - a.timestamp);
 
     return {
@@ -109,20 +130,88 @@ export const Timeline: React.FC = () => {
   const getIcon = (type: TimelineItem['type']) => {
     switch (type) {
       case 'note':
-        return <FileText className="w-4 h-4 text-amber-500" />;
+        return <FileText className="w-3.5 h-3.5 text-amber-500" />;
       case 'link':
       case 'resource-added':
-        return <LinkIcon className="w-4 h-4 text-blue-500" />;
+        return <LinkIcon className="w-3.5 h-3.5 text-blue-500" />;
       case 'image':
-        return <ImageIcon className="w-4 h-4 text-purple-500" />;
+        return <ImageIcon className="w-3.5 h-3.5 text-purple-500" />;
       case 'task-completed':
-        return <CheckCircle className="w-4 h-4 text-emerald-500" />;
+        return <CheckCircle className="w-3.5 h-3.5 text-emerald-500" />;
       default:
-        return <MessageSquare className="w-4 h-4 text-accent" />;
+        return <MessageSquare className="w-3.5 h-3.5 text-accent" />;
     }
   };
 
-  // Filtering
+  const getSessionName = (sessionItems: TimelineItem[]) => {
+    const counts: { [key: string]: number } = {};
+    let maxCount = 0;
+    let mostCommonWorkspaceName = '';
+    
+    sessionItems.forEach(item => {
+      if (item.workspaceName) {
+        counts[item.workspaceName] = (counts[item.workspaceName] || 0) + 1;
+        if (counts[item.workspaceName] > maxCount) {
+          maxCount = counts[item.workspaceName];
+          mostCommonWorkspaceName = item.workspaceName;
+        }
+      }
+    });
+
+    if (mostCommonWorkspaceName) {
+      const nameLower = mostCommonWorkspaceName.toLowerCase();
+      if (nameLower.includes('integration') || nameLower.includes('project') || nameLower.includes('class') || nameLower.includes('study')) {
+        return `Working on ${mostCommonWorkspaceName}`;
+      }
+      return `Working on ${mostCommonWorkspaceName} Integration`;
+    }
+    return 'General Working Session';
+  };
+
+  const getActionLabel = (item: TimelineItem) => {
+    const title = item.title;
+    const url = item.url || '';
+    
+    if (item.type === 'task-completed') {
+      return `Completed Task: "${title}"`;
+    }
+    
+    if (item.type === 'idea') {
+      return `Captured Idea: "${title}"`;
+    }
+    
+    if (item.type === 'note') {
+      return `Added Note: "${title.split('\n')[0].substring(0, 60)}"`;
+    }
+    
+    const isPdf = url.toLowerCase().includes('.pdf') || 
+                  title.toLowerCase().includes('.pdf') || 
+                  item.subtitle?.toLowerCase() === 'pdf';
+    
+    const isGithub = url.toLowerCase().includes('github.com');
+    const isImage = item.type === 'image' || item.subtitle?.toLowerCase() === 'image';
+    
+    if (isPdf) {
+      const cleanTitle = title.replace(/\.pdf$/i, '');
+      return `Opened ${cleanTitle} PDF`;
+    }
+    
+    if (isImage) {
+      return `Copied Image`;
+    }
+    
+    if (isGithub) {
+      return `Visited GitHub Repo: "${title}"`;
+    }
+    
+    if (item.type === 'link' || item.type === 'resource-added') {
+      return `Visited Link: "${title}"`;
+    }
+    
+    return `Captured Idea: "${title}"`;
+  };
+
+  // 1. Filter raw items
   const filteredItems = data.items.filter(item => {
     if (selectedWorkspaceId !== 'all') {
       if (item.workspaceId !== selectedWorkspaceId) return false;
@@ -147,41 +236,54 @@ export const Timeline: React.FC = () => {
       const titleMatch = item.title.toLowerCase().includes(q);
       const subtitleMatch = item.subtitle?.toLowerCase().includes(q) || false;
       const wsMatch = item.workspaceName?.toLowerCase().includes(q) || false;
-      if (!titleMatch && !subtitleMatch && !wsMatch) return false;
+      return titleMatch || subtitleMatch || wsMatch;
     }
 
     return true;
   });
 
-  // Group by Date Helper
-  const groupTimelineByDate = (items: TimelineItem[]) => {
-    const groups: { [key: string]: TimelineItem[] } = {};
-    const todayStr = new Date().toDateString();
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
-    const yesterdayStr = yesterday.toDateString();
+  // 2. Group into sessions
+  const groupTimelineBySession = (items: TimelineItem[]): LearningSession[] => {
+    const sessions: LearningSession[] = [];
 
-    items.forEach(item => {
-      const itemDate = new Date(item.timestamp);
-      const itemDateStr = itemDate.toDateString();
+    const sorted = [...items].sort((a, b) => b.timestamp - a.timestamp);
+    const gapLimit = 2 * 60 * 60 * 1000; // 2 hours
+    let currentSession: LearningSession | null = null;
 
-      let label = itemDate.toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' });
-      if (itemDateStr === todayStr) {
-        label = 'Today';
-      } else if (itemDateStr === yesterdayStr) {
-        label = 'Yesterday';
+    for (const item of sorted) {
+      if (!currentSession) {
+        currentSession = {
+          id: `session-${item.id}`,
+          timestamp: item.timestamp,
+          name: '',
+          items: [item]
+        };
+      } else {
+        const lastItemInSession = currentSession.items[currentSession.items.length - 1];
+        if (Math.abs(lastItemInSession.timestamp - item.timestamp) <= gapLimit) {
+          currentSession.items.push(item);
+        } else {
+          currentSession.name = getSessionName(currentSession.items);
+          sessions.push(currentSession);
+          currentSession = {
+            id: `session-${item.id}`,
+            timestamp: item.timestamp,
+            name: '',
+            items: [item]
+          };
+        }
       }
+    }
 
-      if (!groups[label]) {
-        groups[label] = [];
-      }
-      groups[label].push(item);
-    });
+    if (currentSession) {
+      currentSession.name = getSessionName(currentSession.items);
+      sessions.push(currentSession);
+    }
 
-    return groups;
+    return sessions;
   };
 
-  const groupedTimeline = groupTimelineByDate(filteredItems);
+  const sessions = groupTimelineBySession(filteredItems);
 
   return (
     <div className="max-w-4xl mx-auto px-4 md:px-6 py-6 md:py-10 space-y-8 animate-fade-in min-h-[calc(100vh-4rem)]">
@@ -198,10 +300,10 @@ export const Timeline: React.FC = () => {
         <div>
           <h1 className="text-2xl md:text-3xl font-bold text-text-primary flex items-center gap-2">
             <Clock className="w-7 h-7 text-accent" />
-            <span>Project Timeline</span>
+            <span>Memory Replay</span>
           </h1>
           <p className="text-xs md:text-sm text-text-secondary mt-0.5">
-            Chronological registry of your thoughts, actions, and resources.
+            Recreate active learning sessions and answer: What else was I doing when I learned this?
           </p>
         </div>
       </div>
@@ -214,7 +316,7 @@ export const Timeline: React.FC = () => {
             <div className="relative">
               <Search className="absolute left-3 top-2.5 w-4 h-4 text-text-secondary" />
               <Input
-                placeholder="Search actions..."
+                placeholder="Search topic / tag to replay..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="pl-9 h-9"
@@ -229,14 +331,14 @@ export const Timeline: React.FC = () => {
               )}
             </div>
 
-            {/* Workspace filter */}
+            {/* Focus Mode filter */}
             <div>
               <select
                 value={selectedWorkspaceId}
                 onChange={(e) => setSelectedWorkspaceId(e.target.value)}
                 className="w-full text-xs h-9 bg-card-bg border border-border-color rounded-xl px-2.5 focus:border-accent outline-none"
               >
-                <option value="all">All Workspaces</option>
+                <option value="all">All Focus Modes</option>
                 {data.workspaces.map(w => (
                   <option key={w.id} value={w.id}>
                     📁 {w.name}
@@ -265,101 +367,132 @@ export const Timeline: React.FC = () => {
         </CardContent>
       </Card>
 
-      {/* Timeline Feed */}
-      <div className="space-y-8 relative pl-4 md:pl-6 border-l-2 border-border-color/50 ml-2 md:ml-4">
+      {/* Main timeline content */}
+      <div className="space-y-6">
+        <div className="text-xs font-semibold text-text-secondary uppercase tracking-[0.18em]">
+          Sessions ({sessions.length})
+        </div>
         
-        {filteredItems.length === 0 ? (
-          <div className="py-12 text-center text-sm text-text-secondary italic">
-            No activities matched your search filter criteria.
+        {sessions.length === 0 ? (
+          <div className="py-12 text-center text-sm text-text-secondary italic bg-card-bg/10 border border-border-color/40 rounded-2xl">
+            No active learning sessions found.
           </div>
         ) : (
-          <AnimatePresence initial={false}>
-            {Object.entries(groupedTimeline).map(([dateLabel, items]) => (
-              <div key={dateLabel} className="space-y-4 relative">
-                
-                {/* Date Bullet Badge */}
-                <div className="absolute -left-[30px] md:-left-[38px] top-1.5 flex items-center justify-center">
-                  <div className="w-4 h-4 rounded-full border-2 border-accent bg-bg-app shadow shadow-accent/20" />
-                </div>
+          <div className="space-y-8">
+            {sessions.map((session) => {
+              // Sort items chronologically (earliest to latest) inside the session
+              const chronoItems = [...session.items].sort((a, b) => a.timestamp - b.timestamp);
+              const sessionStart = chronoItems[0].timestamp;
+              const dateLabel = new Date(sessionStart).toLocaleDateString(undefined, { 
+                month: 'long', 
+                day: 'numeric',
+                year: 'numeric'
+              });
+              const timeLabel = new Date(sessionStart).toLocaleTimeString(undefined, { 
+                hour: '2-digit', 
+                minute: '2-digit' 
+              });
 
-                {/* Date Heading */}
-                <h3 className="text-xs md:text-sm font-bold text-text-primary uppercase tracking-wider pl-1 select-none">
-                  {dateLabel}
-                </h3>
-
-                {/* Date's events */}
-                <div className="space-y-3">
-                  {items.map(item => (
-                    <motion.div
-                      key={item.id}
-                      className="group relative flex items-start justify-between gap-4 p-4 rounded-2xl border border-border-color/65 bg-card-bg/60 hover:bg-card-bg shadow-sm hover:shadow-card-shadow transition-all hover:scale-[1.002]"
-                      layout
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, scale: 0.95 }}
-                      transition={{ duration: 0.18 }}
-                    >
-                      <div className="flex items-start gap-3.5 min-w-0">
-                        {/* Icon Container */}
-                        <div className="p-2.5 rounded-xl bg-bg-app border border-border-color/60 shadow-sm flex-shrink-0 group-hover:scale-105 transition-transform">
-                          {getIcon(item.type)}
-                        </div>
-
-                        <div className="min-w-0 space-y-1">
-                          {/* Workspace badge */}
-                          {item.workspaceName && (
-                            <span className="inline-flex items-center gap-1 text-[9px] font-bold text-accent uppercase tracking-widest bg-accent-light/50 border border-accent/10 px-2 py-0.5 rounded-full">
-                              <Folder className="w-2.5 h-2.5" />
-                              {item.workspaceName}
-                            </span>
-                          )}
-
-                          {item.url ? (
-                            <a
-                              href={item.url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="block text-sm font-semibold text-text-primary hover:text-accent break-all leading-snug"
-                            >
-                              {item.title}
-                            </a>
-                          ) : (
-                            <p className="text-sm font-semibold text-text-primary break-words leading-snug">
-                              {item.title}
-                            </p>
-                          )}
-
-                          {item.subtitle && (
-                            <span className="text-[10px] text-text-secondary block font-mono">
-                              {item.subtitle}
-                            </span>
-                          )}
-
-                          <span className="text-[10px] text-text-secondary block font-sans">
-                            {new Date(item.timestamp).toLocaleTimeString(undefined, {
-                              hour: '2-digit',
-                              minute: '2-digit'
-                            })}
-                          </span>
-                        </div>
+              return (
+                <Card 
+                  key={session.id} 
+                  className="border border-border-color/85 bg-card-bg/40 dark:bg-card-bg/10 shadow-sm rounded-3xl overflow-hidden hover:shadow-md transition-all duration-300"
+                >
+                  <CardContent className="p-6 space-y-6">
+                    {/* Session Header */}
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border-color/60 pb-4">
+                      <div>
+                        <span className="text-[10px] uppercase tracking-widest font-bold text-accent bg-accent-light px-2.5 py-1 rounded-full mb-1 inline-block">
+                          Session
+                        </span>
+                        <h3 className="text-base font-bold text-text-primary tracking-tight mt-1">
+                          "{session.name}"
+                        </h3>
                       </div>
+                      <div className="text-left sm:text-right flex sm:flex-col items-baseline sm:items-end gap-2 sm:gap-0.5">
+                        <span className="text-xs font-semibold text-text-primary font-mono">{chronoItems.length} items</span>
+                        <span className="text-[11px] text-text-secondary font-sans">{dateLabel} • {timeLabel}</span>
+                      </div>
+                    </div>
 
-                      {/* Delete timeline record */}
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => handleDeleteItem(item)}
-                        className="h-8 w-8 text-text-secondary hover:text-rose-500 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 flex-shrink-0 cursor-pointer"
-                        aria-label="Remove item"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-                    </motion.div>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </AnimatePresence>
+                    {/* Session Timeline Chain */}
+                    <div className="relative pl-8 md:pl-10 py-2">
+                      <div className="space-y-8">
+                        {chronoItems.map((item, idx) => {
+                          const actionLabel = getActionLabel(item);
+                          const itemTime = new Date(item.timestamp).toLocaleTimeString(undefined, {
+                            hour: '2-digit',
+                            minute: '2-digit'
+                          });
+
+                          return (
+                            <div key={item.id} className="relative group/item">
+                              {/* Dotted connector line segment */}
+                              {idx < chronoItems.length - 1 && (
+                                <div className="absolute left-[11px] top-6 bottom-[-32px] border-l border-dashed border-border-color/90 pointer-events-none z-0" />
+                              )}
+                              
+                              {/* Arrow connector overlay centered on the line */}
+                              {idx < chronoItems.length - 1 && (
+                                <div className="absolute left-0 top-[26px] w-6 flex justify-center pointer-events-none select-none z-10">
+                                  <span className="text-accent text-[11px] font-bold">↓</span>
+                                </div>
+                              )}
+
+                              {/* Action Node Bullet icon */}
+                              <div className="absolute left-0 top-0.5 w-6 h-6 rounded-full border border-border-color/85 bg-card-bg flex items-center justify-center shadow-xs group-hover/item:border-accent transition-colors z-10">
+                                {getIcon(item.type)}
+                              </div>
+
+                              <div className="min-w-0 pl-8 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                                <div className="min-w-0">
+                                  {item.url ? (
+                                    <a
+                                      href={item.url}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="text-sm font-semibold text-text-primary hover:text-accent hover:underline break-words"
+                                    >
+                                      {actionLabel}
+                                    </a>
+                                  ) : (
+                                    <p className="text-sm font-semibold text-text-primary break-words">
+                                      {actionLabel}
+                                    </p>
+                                  )}
+                                  {item.workspaceName && (
+                                    <span className="inline-block text-[9px] font-bold text-accent uppercase tracking-widest bg-accent-light px-1.5 py-0.5 rounded-full mt-1.5 font-sans border border-accent/10">
+                                      {item.workspaceName}
+                                    </span>
+                                  )}
+                                </div>
+                                <span className="text-[10px] text-text-secondary font-mono flex-shrink-0 self-start sm:self-center">
+                                  {itemTime}
+                                </span>
+                              </div>
+
+                              {/* Trash button */}
+                              <div className="absolute right-0 top-0">
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => handleDeleteItem(item)}
+                                  className="h-7 w-7 text-text-secondary hover:text-rose-500 opacity-100 sm:opacity-0 sm:group-hover/item:opacity-100 transition-opacity cursor-pointer flex-shrink-0"
+                                  aria-label="Remove item"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </Button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
         )}
       </div>
 

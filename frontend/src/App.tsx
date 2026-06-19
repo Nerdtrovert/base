@@ -10,6 +10,9 @@ import { AuthCallback } from './pages/AuthCallback';
 import { Login } from './pages/Login';
 import { Timeline } from './pages/Timeline';
 import { About } from './pages/About';
+import { Onboarding } from './pages/Onboarding';
+import { useLiveQuery } from 'dexie-react-hooks';
+import { db } from './services/db';
 import { Home as HomeIcon, Search, PlusCircle, Folder, CheckSquare, Clock } from 'lucide-react';
 import { BrandMark } from './components/BrandMark';
 
@@ -47,9 +50,9 @@ function AppContent() {
     if (location.pathname === '/') {
       document.title = 'Base • Calm Student Workspace';
     } else if (location.pathname.startsWith('/workspace/')) {
-      document.title = 'Base • Workspace';
+      document.title = 'Base • Focus Mode';
     } else if (location.pathname === '/timeline') {
-      document.title = 'Base • Timeline';
+      document.title = 'Base • Memory Replay';
     } else if (location.pathname === '/about') {
       document.title = 'Base • About';
     }
@@ -73,9 +76,19 @@ function AppContent() {
     );
   }
 
+  const ksCount = useLiveQuery(() => db.knowledgeSources.count()) ?? null;
+
   // Redirect to login if not authenticated and trying to access private page
   if (!isAuthenticated && location.pathname !== '/login' && location.pathname !== '/auth/callback' && location.pathname !== '/about') {
     return <Navigate to="/login" replace />;
+  }
+
+  // Redirect to onboarding if authenticated but has no Knowledge Sources set up yet
+  if (isAuthenticated && ksCount === 0 && 
+      location.pathname !== '/onboarding' && 
+      location.pathname !== '/onboarding/knowledge-sources' && 
+      location.pathname !== '/about') {
+    return <Navigate to="/onboarding" replace />;
   }
 
   return (
@@ -92,6 +105,8 @@ function AppContent() {
           <Route path="/auth/callback" element={<AuthCallback />} />
           <Route path="/timeline" element={<Timeline />} />
           <Route path="/about" element={<About />} />
+          <Route path="/onboarding" element={<Onboarding />} />
+          <Route path="/onboarding/knowledge-sources" element={<Onboarding />} />
         </Routes>
       </main>
 
@@ -220,7 +235,7 @@ function AppContent() {
           }`}
         >
           <Clock className="w-5 h-5" />
-          <span>Timeline</span>
+          <span>Memory Replay</span>
         </button>
       </div>
     </div>

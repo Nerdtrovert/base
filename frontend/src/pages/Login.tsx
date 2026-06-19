@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import React, { useEffect, useState } from 'react';
+import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { useBaseStore } from '../store/useBaseStore';
 import { Mail, Lock, User as UserIcon, ArrowRight, ShieldCheck, Eye, EyeOff, Check } from 'lucide-react';
 import { Button } from '../components/ui/button';
@@ -8,23 +8,19 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { BrandMark } from '../components/BrandMark';
 
 export const Login: React.FC = () => {
-  const { loginWithEmail, registerWithEmail, registerWithGDrive, login, isAuthLoading } = useBaseStore();
+  const { loginWithEmail, registerWithEmail, registerWithGDrive, getPendingGDriveSignupContext, login, isAuthLoading } = useBaseStore();
   const navigate = useNavigate();
   const location = useLocation();
+  const [searchParams] = useSearchParams();
 
-  const gdriveState = location.state as {
+  const gdriveState = location.state as ({
     gdriveSignup?: boolean;
     email: string;
     name: string;
-    google_id: string;
-    picture: string;
-    access_token: string;
-    refresh_token: string;
-    scope: string;
-    expiry_date: string;
-  } | null;
+  } & Record<string, unknown>) | null;
+  const isPendingGDriveSignup = searchParams.get('gdrive_signup') === '1' || !!gdriveState?.gdriveSignup;
 
-  const [isSignUp, setIsSignUp] = useState(gdriveState?.gdriveSignup || false);
+  const [isSignUp, setIsSignUp] = useState(isPendingGDriveSignup);
   const [email, setEmail] = useState(gdriveState?.email || '');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -34,6 +30,37 @@ export const Login: React.FC = () => {
   // Success countdown state
   const [isSuccess, setIsSuccess] = useState(false);
   const [countdown, setCountdown] = useState(5);
+
+  useEffect(() => {
+    if (!isPendingGDriveSignup) {
+      return;
+    }
+
+    let isMounted = true;
+
+    const loadPendingSignup = async () => {
+      const pendingContext = await getPendingGDriveSignupContext();
+
+      if (!isMounted) {
+        return;
+      }
+
+      if (!pendingContext) {
+        setValidationError('Your Google sign-up session expired. Please continue with Google again.');
+        return;
+      }
+
+      setIsSignUp(true);
+      setEmail(pendingContext.email);
+      setName(pendingContext.name);
+    };
+
+    loadPendingSignup();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [getPendingGDriveSignupContext, isPendingGDriveSignup]);
 
   // Password requirements calculators
   const hasMinLength = password.length >= 8;
@@ -68,17 +95,11 @@ export const Login: React.FC = () => {
 
     let success = false;
     if (isSignUp) {
-      if (gdriveState?.gdriveSignup) {
+      if (isPendingGDriveSignup) {
         success = await registerWithGDrive({
           email,
           password,
-          name,
-          google_id: gdriveState.google_id,
-          picture: gdriveState.picture,
-          access_token: gdriveState.access_token,
-          refresh_token: gdriveState.refresh_token,
-          scope: gdriveState.scope,
-          expiry_date: gdriveState.expiry_date
+          name
         });
       } else {
         success = await registerWithEmail(email, password, name);
@@ -130,7 +151,7 @@ export const Login: React.FC = () => {
             Registration Successful!
           </h2>
           <p className="text-xs md:text-sm text-text-secondary leading-relaxed max-w-[340px] mx-auto">
-            {gdriveState?.gdriveSignup 
+            {isPendingGDriveSignup
               ? 'Your cloud account has been connected and your local credentials configured.' 
               : 'Your secure student memory layer account has been created successfully.'}
           </p>
@@ -180,10 +201,10 @@ export const Login: React.FC = () => {
             </div>
           </div>
           <h2 className="text-xl md:text-2xl font-bold tracking-tight text-text-primary leading-tight max-w-[320px] mx-auto">
-            {gdriveState?.gdriveSignup ? 'Complete Google Sign-Up' : "It looks like you're not logged in"}
+            {isPendingGDriveSignup ? 'Complete Google Sign-Up' : "It looks like you're not logged in"}
           </h2>
           <p className="text-xs md:text-sm text-text-secondary mt-3 max-w-[340px] mx-auto leading-relaxed">
-            {gdriveState?.gdriveSignup 
+            {isPendingGDriveSignup
               ? 'Your email has been confirmed. Choose a password to finalize your account database setup.'
               : "Let's personalize your workspace and set up your own Base. Log in or sign up to get started."}
           </p>
@@ -222,8 +243,8 @@ export const Login: React.FC = () => {
                   placeholder="Full Name"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  className={`pl-11 h-12 bg-bg-app border-border-color rounded-xl focus:border-accent ${gdriveState?.gdriveSignup ? 'opacity-70 cursor-not-allowed' : ''}`}
-                  readOnly={!!gdriveState?.gdriveSignup}
+                  className={`pl-11 h-12 bg-bg-app border-border-color rounded-xl focus:border-accent ${isPendingGDriveSignup ? 'opacity-70 cursor-not-allowed' : ''}`}
+                  readOnly={isPendingGDriveSignup}
                 />
               </motion.div>
             )}
@@ -238,9 +259,9 @@ export const Login: React.FC = () => {
               placeholder="Email Address"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className={`pl-11 h-12 bg-bg-app border-border-color rounded-xl focus:border-accent ${gdriveState?.gdriveSignup ? 'opacity-70 cursor-not-allowed' : ''}`}
+              className={`pl-11 h-12 bg-bg-app border-border-color rounded-xl focus:border-accent ${isPendingGDriveSignup ? 'opacity-70 cursor-not-allowed' : ''}`}
               required
-              readOnly={!!gdriveState?.gdriveSignup}
+              readOnly={isPendingGDriveSignup}
             />
           </div>
 
@@ -331,7 +352,7 @@ export const Login: React.FC = () => {
               setValidationError('');
               setPassword('');
               setShowPassword(false);
-              if (gdriveState?.gdriveSignup) {
+              if (isPendingGDriveSignup) {
                 setEmail('');
                 setName('');
                 navigate('/login', { state: null, replace: true });

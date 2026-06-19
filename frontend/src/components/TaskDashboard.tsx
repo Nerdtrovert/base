@@ -13,7 +13,13 @@ export const TaskDashboard: React.FC = () => {
   const [targetDay, setTargetDay] = useState<'today' | 'tomorrow' | 'week'>('today');
 
   // Reactively fetch tasks
-  const allTasks = useLiveQuery(() => db.tasks.toArray()) || [];
+  const allTasks = useLiveQuery(async () => {
+    const tasks = await db.tasks.toArray();
+    if (activeWorkspaceId) {
+      return tasks.filter(t => t.workspaceId === activeWorkspaceId);
+    }
+    return tasks;
+  }, [activeWorkspaceId]) || [];
 
   // Helper date strings
   const getOffsetDateString = (offset: number) => {
@@ -47,6 +53,15 @@ export const TaskDashboard: React.FC = () => {
 
     await createTask(newTitle.trim(), activeWorkspaceId, dueDate);
     setNewTitle('');
+  };
+
+  const handleDeleteTask = async (id: string, title: string) => {
+    const confirmed = window.confirm(
+      `Delete task "${title}"?\n\nThis only removes it from your dashboard. Your recent synced state is still recoverable for 30 days.`
+    );
+
+    if (!confirmed) return;
+    await deleteTask(id);
   };
 
   const renderTaskList = (tasks: Task[], emptyMessage: string) => {
@@ -84,9 +99,10 @@ export const TaskDashboard: React.FC = () => {
               <Button
                 variant="ghost"
                 size="icon"
-                onClick={() => deleteTask(task.id)}
+                onClick={() => handleDeleteTask(task.id, task.title)}
                 className="h-7 w-7 text-text-secondary hover:text-rose-500 opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
                 aria-label="Delete task"
+                title="Delete task. Your recent synced state remains recoverable for 30 days."
               >
                 <Trash2 className="w-3.5 h-3.5" />
               </Button>

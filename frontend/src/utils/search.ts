@@ -3,7 +3,7 @@ import { db } from '../services/db';
 
 export interface SearchResult {
   id: string;
-  type: 'workspace' | 'capture' | 'task' | 'resource' | 'gdrive';
+  type: 'workspace' | 'capture' | 'task' | 'resource' | 'gdrive' | 'tag' | 'note' | 'idea';
   title: string;
   subtitle?: string;
   workspaceId: string | null;
@@ -53,13 +53,47 @@ export async function searchEverything(query: string, activeDrives: string[] = [
     });
   });
 
+  // Extract and index Tags
+  const tagSet = new Set<string>();
+  captures.forEach((c) => {
+    const matches = c.content.match(/#[\w-]+/g);
+    if (matches) {
+      matches.forEach(tag => tagSet.add(tag.toLowerCase()));
+    }
+  });
+  resources.forEach((r) => {
+    const matches = r.title.match(/#[\w-]+/g);
+    if (matches) {
+      matches.forEach(tag => tagSet.add(tag.toLowerCase()));
+    }
+  });
+
+  tagSet.forEach((tag) => {
+    if (tag.includes(query.toLowerCase()) || query.toLowerCase().includes(tag.replace('#', ''))) {
+      items.push({
+        id: `tag-${tag}`,
+        type: 'tag',
+        title: tag,
+        subtitle: 'Tag',
+        workspaceId: null,
+        createdAt: Date.now()
+      });
+    }
+  });
+
   captures.forEach((c) => {
     const wsName = c.workspaceId ? workspaceMap.get(c.workspaceId) : undefined;
+    // Map captures: 'note' -> 'note', 'idea' -> 'idea', 'link' -> 'resource', 'image' -> 'note'
+    let resultType: SearchResult['type'] = 'note';
+    if (c.type === 'idea') resultType = 'idea';
+    else if (c.type === 'link') resultType = 'resource';
+    else if (c.type === 'image') resultType = 'note';
+
     items.push({
       id: c.id,
-      type: 'capture',
+      type: resultType,
       title: c.content,
-      subtitle: `Capture • ${c.type.toUpperCase()}`,
+      subtitle: `${resultType.toUpperCase()} • ${c.type.toUpperCase()}`,
       workspaceId: c.workspaceId,
       workspaceName: wsName,
       url: c.url,

@@ -136,7 +136,8 @@ CREATE TABLE IF NOT EXISTS oauth_tokens (
     encrypted_token TEXT,
     encrypted_refresh_token TEXT,
     expires_at TIMESTAMP,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    last_sync TIMESTAMP
 );
 
 CREATE INDEX IF NOT EXISTS idx_oauth_tokens_user_id ON oauth_tokens(user_id);

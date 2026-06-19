@@ -13,12 +13,14 @@ import { Input } from './ui/input';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { BrandMark } from './BrandMark';
+import { StorageHealth } from './StorageHealth';
 import { subscribeToPushNotifications, checkNotificationPermission, isPushSupported } from '../utils/pushNotifications';
 
 export const HamburgerMenu: React.FC = () => {
   const { 
     isAuthenticated, 
     user, 
+    isMockAuth,
     connectedDriveAccounts, 
     addDriveAccount, 
     removeDriveAccount, 
@@ -108,6 +110,33 @@ export const HamburgerMenu: React.FC = () => {
     addDriveAccount(newDriveEmail.trim());
     setNewDriveEmail('');
     setShowAddDriveForm(false);
+  };
+
+  const handleDisconnectDrive = (email: string) => {
+    const confirmed = window.confirm(
+      `Disconnect ${email}?\n\nYour files are still recoverable for 30 days from your latest backup, and anything already in your Google Drive stays in your control.`
+    );
+
+    if (!confirmed) return;
+    removeDriveAccount(email);
+  };
+
+  const handleEnableSync = async () => {
+    if (isMockAuth) {
+      setShowAddDriveForm(true);
+    } else {
+      try {
+        const { BACKEND_URL } = await import('../store/useBaseStore');
+        const response = await fetch(`${BACKEND_URL}/api/auth/google/url`);
+        const data = await response.json();
+        if (data.url) {
+          window.location.href = data.url;
+        }
+      } catch (error) {
+        console.error('Failed to initiate Google Drive connection:', error);
+        showCompanionMessage('Unable to connect to OAuth server.', 'warning');
+      }
+    }
   };
 
   const selectProject = (id: string) => {
@@ -240,7 +269,7 @@ export const HamburgerMenu: React.FC = () => {
                   {/* 1. Projects Section */}
                   <div className="space-y-3">
                     <div className="flex items-center justify-between text-[10px] font-bold text-text-secondary uppercase tracking-[0.2em]">
-                      <span>WORKSPACES</span>
+                      <span>FOCUS MODES</span>
                       <button 
                         onClick={() => {
                           setIsOpen(false);
@@ -295,6 +324,8 @@ export const HamburgerMenu: React.FC = () => {
                       <span>SYNCED</span>
                     </div>
 
+                    <StorageHealth />
+
                     {/* Connected accounts list */}
                     <div className="space-y-2">
                       {connectedDriveAccounts.map((acc) => (
@@ -330,9 +361,9 @@ export const HamburgerMenu: React.FC = () => {
                               </button>
                               <button
                                 type="button"
-                                onClick={() => removeDriveAccount(acc.email)}
+                                onClick={() => handleDisconnectDrive(acc.email)}
                                 className="p-1.5 rounded-lg border border-border-color text-rose-500 hover:bg-rose-500/5 cursor-pointer transition-colors"
-                                title="Disconnect Account"
+                                title="Disconnect account. Files already backed up remain recoverable for 30 days."
                               >
                                 <Trash2 className="w-3 h-3" />
                               </button>
@@ -349,13 +380,19 @@ export const HamburgerMenu: React.FC = () => {
                       )}
                     </div>
 
+                    {connectedDriveAccounts.length > 0 && (
+                      <p className="text-[10px] leading-relaxed text-text-secondary px-1">
+                        Disconnecting an account does not erase files already backed up. Your latest Drive copy remains under your control and recoverable for 30 days.
+                      </p>
+                    )}
+
                     {/* Add mock GDrive Account Form */}
                     {!showAddDriveForm ? (
                       <Button
                         type="button"
                         variant="outline"
                         size="sm"
-                        onClick={() => setShowAddDriveForm(true)}
+                        onClick={handleEnableSync}
                         className="w-full gap-2 border-dashed border-border-color hover:border-accent/50 text-[11px] text-text-secondary"
                       >
                         <Plus className="w-3.5 h-3.5" />
@@ -469,7 +506,7 @@ export const HamburgerMenu: React.FC = () => {
                     >
                       <div className="flex items-center gap-3 text-xs font-medium text-text-primary">
                         <Info className="w-4 h-4 text-accent" />
-                        <span>About Base Workspace</span>
+                        <span>About Base</span>
                       </div>
                       <ArrowRight className="w-3.5 h-3.5 text-text-secondary" />
                     </button>
@@ -519,7 +556,7 @@ export const HamburgerMenu: React.FC = () => {
                   <div className="flex items-center justify-between mb-6 pb-4 border-b border-border-color">
                     <div className="flex items-center gap-2">
                       <Folder className="w-5 h-5 text-accent" />
-                      <h3 className="text-lg font-bold text-text-primary">All Active Workspaces</h3>
+                      <h3 className="text-lg font-bold text-text-primary">All Active Focus Modes</h3>
                       <span className="bg-bg-app border border-border-color text-text-secondary text-[10px] font-mono px-2 py-0.5 rounded-md">
                         {allWorkspaces.length}
                       </span>
@@ -563,7 +600,7 @@ export const HamburgerMenu: React.FC = () => {
                       <div className="col-span-2 text-center py-12 border border-dashed border-border-color rounded-[28px] bg-bg-app/20">
                         <Folder className="w-8 h-8 mx-auto text-text-secondary/40 mb-2" />
                         <p className="text-sm text-text-primary font-semibold">Your Project Drawer is Empty</p>
-                        <p className="text-xs text-text-secondary mt-1">Create your first Workspace from the Home screen.</p>
+                        <p className="text-xs text-text-secondary mt-1">Create your first Focus Mode from the Home screen.</p>
                       </div>
                     )}
                   </div>
@@ -596,7 +633,7 @@ export const HamburgerMenu: React.FC = () => {
                   <div className="flex items-center justify-between mb-6 pb-4 border-b border-border-color">
                     <div className="flex items-center gap-2">
                       <Calendar className="w-5 h-5 text-accent" />
-                      <h3 className="text-lg font-bold text-text-primary">Workspace Calendar</h3>
+                      <h3 className="text-lg font-bold text-text-primary">Focus Mode Calendar</h3>
                     </div>
                     <Button
                       onClick={() => setShowCalendarModal(false)}

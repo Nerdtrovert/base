@@ -15,6 +15,12 @@ export interface DriveAccount {
   connectedAt: number;
 }
 
+interface PendingGDriveSignupContext {
+  gdriveSignup: true;
+  email: string;
+  name: string;
+}
+
 interface BaseState {
   // UI States
   activeWorkspaceId: string | null;
@@ -40,10 +46,14 @@ interface BaseState {
   // Database Mutations (IndexedDB is source of truth, these wrap Dexie)
   createWorkspace: (name: string, description?: string) => Promise<string>;
   updateWorkspace: (id: string, updates: Partial<Workspace>) => Promise<void>;
+  updateWorkspaceUiState: (id: string, uiState: Partial<Workspace['uiState']>) => Promise<void>;
   deleteWorkspace: (id: string) => Promise<void>;
   
   createCapture: (params: { workspaceId: string | null; type: Capture['type']; content: string; url?: string; mediaPath?: string }) => Promise<void>;
   updateCaptureWorkspace: (id: string, workspaceId: string | null) => Promise<void>;
+  updateCaptureContent: (id: string, content: string) => Promise<void>;
+  visitCapture: (id: string) => Promise<void>;
+  toggleCaptureImportance: (id: string) => Promise<void>;
   deleteCapture: (id: string) => Promise<void>;
   
   createTask: (title: string, workspaceId: string | null, dueDate?: string) => Promise<void>;
@@ -63,13 +73,8 @@ interface BaseState {
     email: string;
     password: string;
     name: string;
-    google_id: string;
-    picture: string;
-    access_token: string;
-    refresh_token: string;
-    scope: string;
-    expiry_date: string;
   }) => Promise<boolean>;
+  getPendingGDriveSignupContext: () => Promise<PendingGDriveSignupContext | null>;
   logout: () => Promise<void>;
   triggerSync: () => Promise<void>;
 
@@ -78,6 +83,7 @@ interface BaseState {
   addDriveAccount: (email: string) => void;
   removeDriveAccount: (email: string) => void;
   toggleDriveAccountActive: (email: string) => void;
+  fetchConnectedDrives: () => Promise<void>;
 }
 
 const getBackendUrl = () => {
@@ -92,7 +98,102 @@ const getBackendUrl = () => {
   return `http://${hostname}:5001`;
 };
 
-const BACKEND_URL = getBackendUrl();
+export const BACKEND_URL = import.meta.env.VITE_API_URL || getBackendUrl();
+const DRIVE_ACCOUNTS_STORAGE_KEY = 'base_connected_drives';
+
+const loadDriveAccounts = (): DriveAccount[] => {
+  try {
+    return JSON.parse(localStorage.getItem(DRIVE_ACCOUNTS_STORAGE_KEY) || '[]');
+  } catch (error) {
+    console.error('Failed to parse connected drive accounts:', error);
+    return [];
+  }
+};
+
+const persistDriveAccounts = (accounts: DriveAccount[]) => {
+  localStorage.setItem(DRIVE_ACCOUNTS_STORAGE_KEY, JSON.stringify(accounts));
+};
+
+const resolveWorkspaceId = async (
+  content: string,
+  url?: string,
+  activeWorkspaceId?: string | null
+): Promise<string | null> => {
+  // 1. Direct mention of focus workspace names or matching hashtags in the title/content
+  const workspaces = await db.workspaces.toArray();
+  const textToScan = `${content || ''} ${url || ''}`.toLowerCase();
+  
+  for (const ws of workspaces) {
+    const wsNameLower = ws.name.toLowerCase();
+    
+    // Check if content matches workspace name directly
+    if (textToScan.includes(wsNameLower)) {
+      return ws.id;
+    }
+    
+    // Also parse tags or hashtags from name
+    // e.g. "EdgeAI" -> matches "#edgeai" or "edgeai"
+    const nameNoSpaces = wsNameLower.replace(/\s+/g, '');
+    if (textToScan.includes(`#${nameNoSpaces}`) || textToScan.includes(nameNoSpaces)) {
+      return ws.id;
+    }
+
+    // Try individual words from the workspace name if they are significant (length > 3)
+    const words = wsNameLower.split(/\s+/).filter(w => w.length > 3);
+    for (const word of words) {
+      if (textToScan.includes(word) || textToScan.includes(`#${word}`)) {
+        return ws.id;
+      }
+    }
+  }
+
+  // 2. Proximity matching: Inherit the workspaceId of any other item created/completed in the same 2-hour session window (±2 hours)
+  const now = Date.now();
+  const twoHours = 2 * 60 * 60 * 1000;
+  
+  // Query captures:
+  const recentCaptures = await db.captures
+    .where('createdAt')
+    .between(now - twoHours, now + twoHours)
+    .toArray();
+  recentCaptures.sort((a, b) => b.createdAt - a.createdAt);
+  for (const c of recentCaptures) {
+    if (c.workspaceId) return c.workspaceId;
+  }
+
+  // Query resources:
+  const recentResources = await db.resources
+    .where('createdAt')
+    .between(now - twoHours, now + twoHours)
+    .toArray();
+  recentResources.sort((a, b) => b.createdAt - a.createdAt);
+  for (const r of recentResources) {
+    if (r.workspaceId) return r.workspaceId;
+  }
+
+  // Query tasks:
+  const recentTasks = await db.tasks.toArray();
+  const sortedTasksInWindow = recentTasks
+    .filter(t => {
+      const time = t.completed && t.completedAt ? t.completedAt : t.createdAt;
+      return Math.abs(time - now) <= twoHours && t.workspaceId;
+    })
+    .sort((a, b) => {
+      const timeA = a.completed && a.completedAt ? a.completedAt : a.createdAt;
+      const timeB = b.completed && b.completedAt ? b.completedAt : b.createdAt;
+      return timeB - timeA;
+    });
+  if (sortedTasksInWindow.length > 0 && sortedTasksInWindow[0].workspaceId) {
+    return sortedTasksInWindow[0].workspaceId;
+  }
+
+  // 3. Active workspace state: Fallback to the current active workspace if the user is currently viewing a Focus Mode dashboard
+  if (activeWorkspaceId) {
+    return activeWorkspaceId;
+  }
+
+  return null;
+};
 
 export const useBaseStore = create<BaseState>((set, get) => ({
   activeWorkspaceId: null,
@@ -106,7 +207,7 @@ export const useBaseStore = create<BaseState>((set, get) => ({
   syncStatus: 'idle',
   lastSynced: null,
   isAuthLoading: true,
-  connectedDriveAccounts: JSON.parse(localStorage.getItem('base_connected_drives') || '[]'),
+  connectedDriveAccounts: loadDriveAccounts(),
 
   setActiveWorkspaceId: (id) => {
     set({ activeWorkspaceId: id });
@@ -159,6 +260,16 @@ export const useBaseStore = create<BaseState>((set, get) => ({
     get().triggerSync();
   },
 
+  updateWorkspaceUiState: async (id, uiState) => {
+    const ws = await db.workspaces.get(id);
+    if (ws) {
+      const currentUi = ws.uiState || {};
+      const newUi = { ...currentUi, ...uiState };
+      await db.workspaces.update(id, { uiState: newUi, updatedAt: Date.now() });
+      get().triggerSync();
+    }
+  },
+
   deleteWorkspace: async (id) => {
     await db.transaction('rw', [db.workspaces, db.captures, db.tasks, db.resources], async () => {
       await db.workspaces.delete(id);
@@ -176,14 +287,18 @@ export const useBaseStore = create<BaseState>((set, get) => ({
   // ----------------------------------------------------
   createCapture: async ({ workspaceId, type, content, url, mediaPath }) => {
     const id = crypto.randomUUID();
+    const resolvedWsId = workspaceId || await resolveWorkspaceId(content, url, get().activeWorkspaceId);
     const capture: Capture = {
       id,
-      workspaceId,
+      workspaceId: resolvedWsId,
       type,
       content,
       url,
       mediaPath,
-      createdAt: Date.now()
+      createdAt: Date.now(),
+      lastOpenedAt: Date.now(),
+      visitCount: 1,
+      importance: 0
     };
     await db.captures.add(capture);
 
@@ -193,14 +308,14 @@ export const useBaseStore = create<BaseState>((set, get) => ({
         title: content || url,
         url,
         type: 'link',
-        workspaceId
+        workspaceId: resolvedWsId
       });
     } else if (type === 'image' && mediaPath) {
       await get().createResource({
         title: content || 'Captured Image',
         url: mediaPath,
         type: 'image',
-        workspaceId
+        workspaceId: resolvedWsId
       });
     }
 
@@ -213,6 +328,33 @@ export const useBaseStore = create<BaseState>((set, get) => ({
     get().triggerSync();
   },
 
+  updateCaptureContent: async (id, content) => {
+    await db.captures.update(id, { content, lastOpenedAt: Date.now() });
+    get().triggerSync();
+  },
+
+  visitCapture: async (id) => {
+    const capture = await db.captures.get(id);
+    if (capture) {
+      const visits = (capture.visitCount || 0) + 1;
+      await db.captures.update(id, { visitCount: visits, lastOpenedAt: Date.now() });
+      get().triggerSync();
+    }
+  },
+
+  toggleCaptureImportance: async (id) => {
+    const capture = await db.captures.get(id);
+    if (capture) {
+      const importance = capture.importance === 1 ? 0 : 1;
+      await db.captures.update(id, { importance });
+      get().showCompanionMessage(
+        importance === 1 ? 'Marked as important.' : 'Removed from important.',
+        'info'
+      );
+      get().triggerSync();
+    }
+  },
+
   deleteCapture: async (id) => {
     await db.captures.delete(id);
     get().triggerSync();
@@ -223,11 +365,12 @@ export const useBaseStore = create<BaseState>((set, get) => ({
   // ----------------------------------------------------
   createTask: async (title, workspaceId, dueDate) => {
     const id = crypto.randomUUID();
+    const resolvedWsId = workspaceId || await resolveWorkspaceId(title, undefined, get().activeWorkspaceId);
     // Default due date to Today if not specified
     const finalDueDate = dueDate || new Date().toISOString().split('T')[0];
     const task: Task = {
       id,
-      workspaceId,
+      workspaceId: resolvedWsId,
       title,
       completed: false,
       dueDate: finalDueDate,
@@ -263,9 +406,10 @@ export const useBaseStore = create<BaseState>((set, get) => ({
   // ----------------------------------------------------
   createResource: async ({ title, url, type, workspaceId, extractedText }) => {
     const id = crypto.randomUUID();
+    const resolvedWsId = workspaceId || await resolveWorkspaceId(title, url, get().activeWorkspaceId);
     const resource: Resource = {
       id,
-      workspaceId,
+      workspaceId: resolvedWsId,
       title,
       url,
       type,
@@ -313,6 +457,8 @@ export const useBaseStore = create<BaseState>((set, get) => ({
         });
         // Run sync on successful login detection
         get().triggerSync();
+        // Fetch connected drives
+        get().fetchConnectedDrives();
       } else {
         set({ isAuthenticated: false, user: null, isAuthLoading: false });
       }
@@ -458,6 +604,23 @@ export const useBaseStore = create<BaseState>((set, get) => ({
     }
   },
 
+  getPendingGDriveSignupContext: async () => {
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/auth/google/signup-context`, {
+        credentials: 'include'
+      });
+
+      if (!response.ok) {
+        return null;
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.error('Failed to fetch Google sign-up context:', error);
+      return null;
+    }
+  },
+
   logout: async () => {
     try {
       await fetch(`${BACKEND_URL}/api/auth/logout`, { 
@@ -530,14 +693,14 @@ export const useBaseStore = create<BaseState>((set, get) => ({
     
     // Deactivate others to make this one the primary active sync target
     const updated = [...accounts.map(acc => ({ ...acc, isActive: false })), newAccount];
-    localStorage.setItem('base_connected_drives', JSON.stringify(updated));
+    persistDriveAccounts(updated);
     set({ connectedDriveAccounts: updated });
     get().showCompanionMessage(`Connected Drive: ${email}`, 'success');
   },
   
   removeDriveAccount: (email) => {
     const updated = get().connectedDriveAccounts.filter(acc => acc.email !== email);
-    localStorage.setItem('base_connected_drives', JSON.stringify(updated));
+    persistDriveAccounts(updated);
     set({ connectedDriveAccounts: updated });
     get().showCompanionMessage('Account disconnected.', 'info');
   },
@@ -547,7 +710,34 @@ export const useBaseStore = create<BaseState>((set, get) => ({
       ...acc,
       isActive: acc.email === email ? !acc.isActive : acc.isActive
     }));
-    localStorage.setItem('base_connected_drives', JSON.stringify(updated));
+    persistDriveAccounts(updated);
     set({ connectedDriveAccounts: updated });
+  },
+  
+  fetchConnectedDrives: async () => {
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/sync/drive/accounts`, {
+        credentials: 'include'
+      });
+      if (response.ok) {
+        const data = await response.json();
+        const serverAccounts: DriveAccount[] = data.accounts || [];
+        
+        // Merge with client-side active status preferences
+        const localAccounts = get().connectedDriveAccounts;
+        const merged = serverAccounts.map((serverAcc) => {
+          const matchedLocal = localAccounts.find(l => l.email === serverAcc.email);
+          return {
+            ...serverAcc,
+            isActive: matchedLocal ? matchedLocal.isActive : true
+          };
+        });
+        
+        set({ connectedDriveAccounts: merged });
+        persistDriveAccounts(merged);
+      }
+    } catch (e) {
+      console.error('[Sync] Failed to fetch connected drive accounts:', e);
+    }
   }
 }));

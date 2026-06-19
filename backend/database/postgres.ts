@@ -17,7 +17,10 @@ const connectionConfig = useConnectionString
     };
 
 const pool = new Pool({
-  ...connectionConfig
+  ...connectionConfig,
+  ssl: process.env.DATABASE_URL && !process.env.DATABASE_URL.includes('localhost') && !process.env.DATABASE_URL.includes('127.0.0.1')
+    ? { rejectUnauthorized: false }
+    : undefined
 });
 
 pool.on('error', (err: Error) => {
@@ -55,7 +58,24 @@ export const initializeDatabase = async (): Promise<void> => {
     if (fs.existsSync(schemaPath)) {
       console.log(`[Database] Loading schema from ${schemaPath}`);
       const schemaSql = fs.readFileSync(schemaPath, 'utf8');
-      await client.query(schemaSql);
+      
+      const statements = schemaSql
+        .split(';')
+        .map(s => s.trim())
+        .filter(s => s.length > 0);
+
+      for (const statement of statements) {
+        if (statement.startsWith('--')) continue;
+        try {
+          await client.query(statement);
+        } catch (stmtError: any) {
+          if (statement.toLowerCase().includes('create extension')) {
+            console.warn('[Database] Warning: Extension creation skipped/failed:', stmtError.message);
+          } else {
+            throw stmtError;
+          }
+        }
+      }
       console.log('[Database] Schema initialized successfully');
     } else {
       console.error('[Database] schema.sql file not found!');

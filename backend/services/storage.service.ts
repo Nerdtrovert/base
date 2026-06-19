@@ -1,6 +1,5 @@
-import { google } from 'googleapis';
 import { Readable } from 'stream';
-import { query } from '../database/postgres';
+import { createGoogleOAuthClient, attachGoogleTokenPersistence, isMockGoogleConfigured } from './google.service';
 
 export interface StorageUploadOptions {
   name: string;
@@ -30,7 +29,7 @@ export class GoogleDriveStorageProvider implements CloudStorageProvider {
     const { name, mimeType } = options;
     const { accessToken, refreshToken, email } = credentials || {};
 
-    const isMock = process.env.GOOGLE_CLIENT_ID === 'MOCK_CLIENT_ID' || !process.env.GOOGLE_CLIENT_ID || !accessToken;
+    const isMock = isMockGoogleConfigured() || !accessToken;
 
     if (isMock) {
       console.log('[Storage] Running in Mock Google Drive backup mode');
@@ -41,37 +40,17 @@ export class GoogleDriveStorageProvider implements CloudStorageProvider {
     }
 
     try {
-      // Initialize OAuth2 client
-      const client = new google.auth.OAuth2(
-        process.env.GOOGLE_CLIENT_ID,
-        process.env.GOOGLE_CLIENT_SECRET,
-        process.env.GOOGLE_REDIRECT_URI
-      );
+      const client = createGoogleOAuthClient();
       client.setCredentials({
         access_token: accessToken,
         refresh_token: refreshToken
       });
 
-      // Set up listener to save refreshed tokens automatically
-      client.on('tokens', async (newTokens) => {
-        if (newTokens.access_token) {
-          if (email) {
-            await query(
-              `UPDATE oauth_tokens 
-               SET encrypted_token = $1, expires_at = $2
-               WHERE user_id = $3 AND email = $4 AND service = 'google'`,
-              [newTokens.access_token, newTokens.expiry_date ? new Date(newTokens.expiry_date) : null, userId, email]
-            );
-          }
-          await query(
-            `UPDATE users 
-             SET google_access_token = $1, updated_at = CURRENT_TIMESTAMP
-             WHERE id = $2`,
-            [newTokens.access_token, userId]
-          );
-        }
-      });
+      if (email) {
+        attachGoogleTokenPersistence(client, userId, email);
+      }
 
+      const { google } = await import('googleapis');
       const drive = google.drive({ version: 'v3', auth: client });
 
       // Search if name already exists in appDataFolder

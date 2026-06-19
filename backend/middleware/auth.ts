@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import rateLimit from 'express-rate-limit';
-import { verifyAccessToken } from '../services/auth.service';
+import { verifyAccessToken, verifyRefreshTokenInDb } from '../services/auth.service';
 import { JWTPayload } from '../models/types';
 
 // Extend Express Request type to include user data
@@ -14,12 +14,14 @@ declare global {
 }
 
 // Authentication middleware
-export const authMiddleware = (req: Request, res: Response, next: NextFunction): void => {
+export const authMiddleware = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   let token = req.headers.authorization?.split('Bearer ')[1];
+  let isRefreshToken = false;
 
   // Fallback to cookie authentication if authorization header is missing
   if (!token && req.cookies?.refreshToken) {
     token = req.cookies.refreshToken;
+    isRefreshToken = true;
   }
 
   if (!token) {
@@ -27,7 +29,12 @@ export const authMiddleware = (req: Request, res: Response, next: NextFunction):
     return;
   }
 
-  const payload = verifyAccessToken(token);
+  let payload: JWTPayload | null = null;
+  if (isRefreshToken) {
+    payload = await verifyRefreshTokenInDb(token);
+  } else {
+    payload = verifyAccessToken(token);
+  }
 
   if (!payload) {
     res.status(401).json({ error: 'Invalid or expired token' });

@@ -1,30 +1,70 @@
 import express from 'express';
+import bcrypt from 'bcrypt';
 import {
   generateAuthUrl,
   exchangeCodeForTokens,
   refreshAccessToken,
   getUserById,
   logout,
+  registerDeviceAndGenerateTokens,
   registerWithEmail,
   loginWithEmail,
   verifyAccessToken,
-  oauth2Client
+  verifyRefreshTokenInDb
 } from '../services/auth.service';
 import { authMiddleware, authRateLimiter } from '../middleware/auth';
-import { google } from 'googleapis';
 import { query } from '../database/postgres';
+import { decryptValue, encryptValue, exchangeCodeForGoogleTokens, fetchGoogleProfile, saveGoogleTokens } from '../services/google.service';
+import { JWTPayload } from '../models/types';
+import { getGoogleAuthUrlController, googleCallbackController } from '../controllers/authController';
 
 const router = express.Router();
+const PENDING_GDRIVE_SIGNUP_COOKIE = 'pendingGDriveSignup';
+const PENDING_GDRIVE_MAX_AGE_MS = 10 * 60 * 1000;
 
 const getCookieOptions = (req: any) => {
   const origin = req.headers.origin;
   const isDevTunnel = origin && origin.includes('devtunnels.ms');
+  const isRender = origin && origin.includes('onrender.com');
+  const isProd = process.env.NODE_ENV === 'production';
+  
   return {
     httpOnly: true,
-    secure: isDevTunnel || process.env.NODE_ENV === 'production',
-    sameSite: isDevTunnel ? 'none' as const : 'lax' as const,
+    secure: isDevTunnel || isRender || isProd,
+    sameSite: (isDevTunnel || isRender) ? 'none' as const : 'lax' as const,
     maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
   };
+};
+
+const getPendingGDriveCookieOptions = (req: any) => ({
+  ...getCookieOptions(req),
+  maxAge: PENDING_GDRIVE_MAX_AGE_MS
+});
+
+const setPendingGDriveSignup = (req: any, res: any, payload: Record<string, unknown>) => {
+  res.cookie(
+    PENDING_GDRIVE_SIGNUP_COOKIE,
+    encryptValue(JSON.stringify(payload)),
+    getPendingGDriveCookieOptions(req)
+  );
+};
+
+const clearPendingGDriveSignup = (req: any, res: any) => {
+  const { maxAge, ...clearOptions } = getPendingGDriveCookieOptions(req);
+  res.clearCookie(PENDING_GDRIVE_SIGNUP_COOKIE, clearOptions);
+};
+
+const readPendingGDriveSignup = (req: any) => {
+  const rawValue = req.cookies?.[PENDING_GDRIVE_SIGNUP_COOKIE];
+  if (!rawValue) return null;
+
+  try {
+    const decrypted = decryptValue(rawValue);
+    return decrypted ? JSON.parse(decrypted) : null;
+  } catch (error) {
+    console.error('[Auth] Failed to parse pending Google signup cookie:', error);
+    return null;
+  }
 };
 
 // Register with Email
@@ -61,13 +101,17 @@ router.post('/register', authRateLimiter, async (req, res) => {
 // Register with Google Drive (email & password setup)
 router.post('/register-gdrive', authRateLimiter, async (req, res) => {
   try {
-    const { email, password, name, google_id, picture, access_token, refresh_token, scope, expiry_date, deviceInfo } = req.body;
+    const { email, password, name, deviceInfo } = req.body;
+    const pendingSignup = readPendingGDriveSignup(req);
 
-    if (!email || !password || !name || !google_id || !deviceInfo) {
+    if (!email || !password || !name || !deviceInfo || !pendingSignup?.google_id) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
-    const bcrypt = require('bcrypt');
+    if (pendingSignup.email !== email) {
+      return res.status(400).json({ error: 'Pending Google sign-up session does not match this email' });
+    }
+
     const passwordHash = await bcrypt.hash(password, 10);
 
     // Upsert user in database
@@ -82,29 +126,17 @@ router.post('/register-gdrive', authRateLimiter, async (req, res) => {
        google_access_token = EXCLUDED.google_access_token,
        google_refresh_token = COALESCE(EXCLUDED.google_refresh_token, users.google_refresh_token)
        RETURNING id`,
-      [email, google_id, passwordHash, name, picture, access_token, refresh_token]
+      [email, pendingSignup.google_id, passwordHash, name, pendingSignup.picture, null, null]
     );
 
     const userId = userResult.rows[0].id;
 
-    // Save token to oauth_tokens table
-    await query(
-      `INSERT INTO oauth_tokens (user_id, service, scope, encrypted_token, encrypted_refresh_token, expires_at, email)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
-       ON CONFLICT (user_id, email) DO UPDATE SET
-       encrypted_token = EXCLUDED.encrypted_token,
-       encrypted_refresh_token = COALESCE(EXCLUDED.encrypted_refresh_token, oauth_tokens.encrypted_refresh_token),
-       expires_at = EXCLUDED.expires_at`,
-      [
-        userId,
-        'google',
-        scope || 'https://www.googleapis.com/auth/drive.appdata',
-        access_token,
-        refresh_token,
-        expiry_date ? new Date(parseInt(expiry_date, 10)) : null,
-        email
-      ]
-    );
+    await saveGoogleTokens(userId, email, {
+      access_token: pendingSignup.access_token,
+      refresh_token: pendingSignup.refresh_token,
+      scope: pendingSignup.scope,
+      expiry_date: pendingSignup.expiry_date ? Number(pendingSignup.expiry_date) : null
+    });
 
     // Register device
     await query(
@@ -115,6 +147,7 @@ router.post('/register-gdrive', authRateLimiter, async (req, res) => {
       [userId, deviceInfo.name, deviceInfo.type, deviceInfo.os, deviceInfo.unique_identifier]
     );
 
+    clearPendingGDriveSignup(req, res);
     res.json({ success: true, message: 'Google Drive account connected. Registration complete.' });
   } catch (error: any) {
     console.error('[Auth] Register GDrive error:', error);
@@ -159,13 +192,22 @@ router.post('/login', authRateLimiter, async (req, res) => {
 // Get Auth Status (compatible with google/status frontend endpoint)
 router.get('/google/status', async (req, res) => {
   try {
-    const token = req.cookies.refreshToken || req.headers.authorization?.split('Bearer ')[1];
+    const authHeaderToken = req.headers.authorization?.split('Bearer ')[1];
+    const cookieToken = req.cookies.refreshToken;
+
+    const token = authHeaderToken || cookieToken;
 
     if (!token) {
       return res.json({ isAuthenticated: false, isMock: false });
     }
 
-    const payload = verifyAccessToken(token);
+    let payload: JWTPayload | null = null;
+    if (authHeaderToken) {
+      payload = verifyAccessToken(authHeaderToken);
+    } else if (cookieToken) {
+      payload = await verifyRefreshTokenInDb(cookieToken);
+    }
+
     if (!payload) {
       return res.json({ isAuthenticated: false, isMock: false });
     }
@@ -191,117 +233,25 @@ router.get('/google/status', async (req, res) => {
 });
 
 // Get Google OAuth URL
-router.get('/google/url', (req, res) => {
-  try {
-    const url = generateAuthUrl();
-    res.json({ url });
-  } catch (error) {
-    console.error('[Auth] Error generating auth URL:', error);
-    res.status(500).json({ error: 'Failed to generate auth URL' });
+router.get('/google/url', getGoogleAuthUrlController);
+
+router.get('/google/signup-context', authRateLimiter, (req, res) => {
+  const pendingSignup = readPendingGDriveSignup(req);
+
+  if (!pendingSignup) {
+    return res.status(404).json({ error: 'No pending Google sign-up session found' });
   }
+
+  res.json({
+    gdriveSignup: true,
+    email: pendingSignup.email || '',
+    name: pendingSignup.name || ''
+  });
 });
 
 // Google OAuth callback (GET redirect from browser)
-router.get('/google/callback', async (req, res) => {
-  try {
-    const { code, error } = req.query;
-    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
-
-    if (error) {
-      console.error('[Auth] Google OAuth consent error:', error);
-      return res.redirect(`${frontendUrl}/auth/callback?status=error&error=${encodeURIComponent(error as string)}`);
-    }
-
-    if (!code) {
-      return res.redirect(`${frontendUrl}/auth/callback?status=error&error=No%20authorization%20code%20provided`);
-    }
-
-    // Exchange code for tokens
-    const { tokens } = await oauth2Client.getToken(code as string);
-    oauth2Client.setCredentials(tokens);
-
-    // Get user info
-    const oauth2 = google.oauth2({ version: 'v2', auth: oauth2Client });
-    const userInfo = await oauth2.userinfo.get();
-
-    const email = userInfo.data.email;
-    const name = userInfo.data.name;
-    const googleId = userInfo.data.id;
-    const picture = userInfo.data.picture;
-
-    // Check if user exists in database and has a password
-    const userCheck = await query(
-      `SELECT id, password_hash FROM users WHERE email = $1`,
-      [email]
-    );
-
-    const deviceInfo = {
-      name: req.headers['user-agent']?.substring(0, 30) || 'Browser',
-      type: 'web',
-      os: 'unknown',
-      unique_identifier: 'google-oauth-flow-' + Date.now()
-    };
-
-    if (userCheck.rows.length > 0 && userCheck.rows[0].password_hash) {
-      // User exists with password. Complete login and redirect to success.
-      const userId = userCheck.rows[0].id;
-
-      // Update tokens in users table
-      await query(
-        `UPDATE users 
-         SET google_id = $1, google_access_token = $2, google_refresh_token = COALESCE($3, google_refresh_token), picture = COALESCE(picture, $4)
-         WHERE id = $5`,
-        [googleId, tokens.access_token, tokens.refresh_token, picture, userId]
-      );
-
-      // Save/update to oauth_tokens table for multi-account support
-      await query(
-        `INSERT INTO oauth_tokens (user_id, service, scope, encrypted_token, encrypted_refresh_token, expires_at, email)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)
-         ON CONFLICT (user_id, email) DO UPDATE SET
-         encrypted_token = EXCLUDED.encrypted_token,
-         encrypted_refresh_token = COALESCE(EXCLUDED.encrypted_refresh_token, oauth_tokens.encrypted_refresh_token),
-         expires_at = EXCLUDED.expires_at`,
-        [
-          userId,
-          'google',
-          tokens.scope || 'https://www.googleapis.com/auth/drive.appdata',
-          tokens.access_token,
-          tokens.refresh_token,
-          tokens.expiry_date ? new Date(tokens.expiry_date) : null,
-          email
-        ]
-      );
-
-      const { v4: uuidv4 } = require('uuid');
-      const sessionTokens = await exchangeCodeForTokens(code as string, uuidv4(), deviceInfo);
-
-      // Set secure cookie with refresh token
-      res.cookie('refreshToken', sessionTokens.refreshToken, getCookieOptions(req));
-
-      // Redirect user back to the frontend success route
-      res.redirect(`${frontendUrl}/auth/callback?status=success`);
-    } else {
-      // New user or Google-only user with no password. Redirect to password setting flow.
-      const params = new URLSearchParams({
-        status: 'gdrive_signup',
-        email: email || '',
-        name: name || '',
-        google_id: googleId || '',
-        picture: picture || '',
-        access_token: tokens.access_token || '',
-        refresh_token: tokens.refresh_token || '',
-        scope: tokens.scope || '',
-        expiry_date: tokens.expiry_date ? String(tokens.expiry_date) : ''
-      });
-      res.redirect(`${frontendUrl}/auth/callback?${params.toString()}`);
-    }
-  } catch (err) {
-    console.error('[Auth] Google OAuth callback error:', err);
-    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
-    res.redirect(`${frontendUrl}/auth/callback?status=error&error=Authentication%20failed`);
-  }
-});
+// Google OAuth callback (GET redirect from browser)
+router.get('/google/callback', googleCallbackController);
 
 // Google OAuth callback (POST request fallback/API interaction)
 router.post('/google/callback', authRateLimiter, async (req, res) => {
@@ -385,6 +335,7 @@ router.post('/logout', authMiddleware, async (req, res) => {
     await logout(req.deviceId!);
     const { maxAge, ...clearOptions } = getCookieOptions(req);
     res.clearCookie('refreshToken', clearOptions);
+    clearPendingGDriveSignup(req, res);
     res.json({ success: true, message: 'Logged out successfully' });
   } catch (error) {
     console.error('[Auth] Logout error:', error);

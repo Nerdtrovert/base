@@ -87,7 +87,7 @@ export const Navbar: React.FC = () => {
               onClick={() => navigate('/timeline')}
               className="ml-6 hidden md:inline-block text-xs font-normal text-text-secondary hover:text-accent hover:underline cursor-pointer bg-transparent border-none p-0"
             >
-              Timeline
+              Memory Replay
             </button>
           )}
 

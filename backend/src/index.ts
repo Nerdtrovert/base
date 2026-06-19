@@ -18,7 +18,7 @@ const PORT = process.env.PORT || 5001;
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
 
 const allowedOrigins = [
-  FRONTEND_URL,
+  FRONTEND_URL.replace(/\/$/, ''),
   'http://localhost:5173',
   'http://127.0.0.1:5173'
 ];
@@ -28,11 +28,13 @@ app.use(cors({
   origin: (origin, callback) => {
     if (!origin) return callback(null, true);
     
+    const normalizedOrigin = origin.replace(/\/$/, '');
     if (
-      allowedOrigins.includes(origin) ||
-      origin.includes('devtunnels.ms') ||
-      origin.startsWith('http://localhost:') ||
-      origin.startsWith('http://127.0.0.1:')
+      allowedOrigins.includes(normalizedOrigin) ||
+      normalizedOrigin.includes('onrender.com') ||
+      normalizedOrigin.includes('devtunnels.ms') ||
+      normalizedOrigin.startsWith('http://localhost:') ||
+      normalizedOrigin.startsWith('http://127.0.0.1:')
     ) {
       return callback(null, true);
     }

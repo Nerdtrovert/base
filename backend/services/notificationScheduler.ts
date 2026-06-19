@@ -53,7 +53,8 @@ export const runNotificationChecks = async () => {
           let dueHour = 14; // Default to 2:00 PM if no time in title
           let dueMinute = 0;
           
-          const timeMatch = task.title.match(/(?:at|by|starts? at|due at)?\s*(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i);
+          const taskTitle = task.title || '';
+          const timeMatch = taskTitle.match(/(?:at|by|starts? at|due at)?\s*(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i);
           if (timeMatch) {
             let hour = parseInt(timeMatch[1], 10);
             const minute = timeMatch[2] ? parseInt(timeMatch[2], 10) : 0;

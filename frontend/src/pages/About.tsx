@@ -31,7 +31,7 @@ export const About: React.FC = () => {
   const principles = [
     'Capture first, organize later.',
     'Search instead of navigation.',
-    'Workspaces instead of folders.',
+    'Focus modes instead of folders.',
     'Context over storage.',
     'Local-first, cloud-enabled.',
     'Calm over productivity pressure.'

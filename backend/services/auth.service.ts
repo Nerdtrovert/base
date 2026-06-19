@@ -1,33 +1,21 @@
 import jwt, { SignOptions } from 'jsonwebtoken';
 import { v4 as uuidv4 } from 'uuid';
-import { google } from 'googleapis';
 import bcrypt from 'bcrypt';
 import { query } from '../database/postgres';
 import { User, AuthTokenResponse, JWTPayload } from '../models/types';
+import {
+  exchangeCodeForGoogleTokens,
+  fetchGoogleProfile,
+  generateGoogleAuthUrl,
+  saveGoogleTokens
+} from './google.service';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
 const JWT_EXPIRY = '15m';
 const REFRESH_TOKEN_EXPIRY = '30d';
 
-// Initialize Google OAuth2 Client
-export const oauth2Client = new google.auth.OAuth2(
-  process.env.GOOGLE_CLIENT_ID,
-  process.env.GOOGLE_CLIENT_SECRET,
-  process.env.GOOGLE_REDIRECT_URI
-);
-
 export const generateAuthUrl = (): string => {
-  const scopes = [
-    'https://www.googleapis.com/auth/drive.appdata',
-    'https://www.googleapis.com/auth/userinfo.profile',
-    'https://www.googleapis.com/auth/userinfo.email'
-  ];
-
-  return oauth2Client.generateAuthUrl({
-    access_type: 'offline',
-    scope: scopes,
-    prompt: 'consent'
-  });
+  return generateGoogleAuthUrl();
 };
 
 export const exchangeCodeForTokens = async (
@@ -36,19 +24,14 @@ export const exchangeCodeForTokens = async (
   deviceInfo: { name: string; type: string; os: string; unique_identifier: string }
 ): Promise<AuthTokenResponse> => {
   try {
-    // Exchange code for tokens
-    const { tokens } = await oauth2Client.getToken(code);
-    oauth2Client.setCredentials(tokens);
-
-    // Get user info
-    const oauth2 = google.oauth2({ version: 'v2', auth: oauth2Client });
-    const userInfo = await oauth2.userinfo.get();
+    const { client, tokens } = await exchangeCodeForGoogleTokens(code);
+    const profile = await fetchGoogleProfile(client);
 
     const userData = {
-      email: userInfo.data.email,
-      google_id: userInfo.data.id,
-      name: userInfo.data.name,
-      picture: userInfo.data.picture
+      email: profile.email,
+      google_id: profile.googleId,
+      name: profile.name,
+      picture: profile.picture
     };
 
     // Upsert user with Google tokens
@@ -67,31 +50,14 @@ export const exchangeCodeForTokens = async (
         userData.google_id,
         userData.name,
         userData.picture,
-        tokens.access_token,
-        tokens.refresh_token
+        null,
+        null
       ]
     );
 
     const userId = userResult.rows[0].id;
 
-    // Save/update to oauth_tokens table for multi-account support
-    await query(
-      `INSERT INTO oauth_tokens (user_id, service, scope, encrypted_token, encrypted_refresh_token, expires_at, email)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
-       ON CONFLICT (user_id, email) DO UPDATE SET
-       encrypted_token = EXCLUDED.encrypted_token,
-       encrypted_refresh_token = COALESCE(EXCLUDED.encrypted_refresh_token, oauth_tokens.encrypted_refresh_token),
-       expires_at = EXCLUDED.expires_at`,
-      [
-        userId,
-        'google',
-        tokens.scope || 'https://www.googleapis.com/auth/drive.appdata',
-        tokens.access_token,
-        tokens.refresh_token,
-        tokens.expiry_date ? new Date(tokens.expiry_date) : null,
-        userData.email
-      ]
-    );
+    await saveGoogleTokens(userId, userData.email || '', tokens);
 
     // Upsert device
     const deviceResult = await query(
@@ -191,6 +157,29 @@ export const verifyAccessToken = (token: string): JWTPayload | null => {
     return jwt.verify(token, JWT_SECRET) as JWTPayload;
   } catch (error) {
     console.error('[Auth] Token verification failed:', error);
+    return null;
+  }
+};
+
+export const verifyRefreshTokenInDb = async (refreshToken: string): Promise<JWTPayload | null> => {
+  try {
+    const decoded = jwt.verify(refreshToken, JWT_SECRET) as JWTPayload;
+    const { userId, deviceId } = decoded;
+
+    const tokenHash = Buffer.from(refreshToken).toString('base64');
+    const result = await query(
+      `SELECT id FROM refresh_tokens 
+       WHERE user_id = $1 AND device_id = $2 AND token_hash = $3 AND expires_at > CURRENT_TIMESTAMP`,
+      [userId, deviceId, tokenHash]
+    );
+
+    if (result.rows.length === 0) {
+      return null;
+    }
+
+    return decoded;
+  } catch (error) {
+    console.error('[Auth] Refresh token database verification failed:', error);
     return null;
   }
 };

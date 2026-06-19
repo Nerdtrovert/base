@@ -8,7 +8,9 @@ import { TaskDashboard } from '../components/TaskDashboard';
 import { RecentActivity } from '../components/RecentActivity';
 import { PinnedResources } from '../components/PinnedResources';
 import { WorkspaceList } from '../components/WorkspaceList';
-import { Search, Sparkles, Folder, MessageSquare, CheckSquare, Link as LinkIcon, HardDrive, CornerDownLeft } from 'lucide-react';
+import { RevisionEngine } from '../components/RevisionEngine';
+import { StorageHealth } from '../components/StorageHealth';
+import { Search, Sparkles, Folder, MessageSquare, CheckSquare, Link as LinkIcon, HardDrive, CornerDownLeft, FileText } from 'lucide-react';
 import { BrandMark } from '../components/BrandMark';
 import { Card, CardContent } from '../components/ui/card';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -91,7 +93,7 @@ export const Home: React.FC = () => {
         
       const searchRes = await searchEverything(searchVal, activeDrives);
       if (active) {
-        setResults(searchRes.slice(0, 8)); // Limit to top 8 items
+        setResults(searchRes.slice(0, 30)); // Limit to top 30 items
         setSelectedIndex(0);
       }
     };
@@ -102,6 +104,41 @@ export const Home: React.FC = () => {
       clearTimeout(debounce);
     };
   }, [searchVal, connectedDriveAccounts]);
+
+  // Group search results by category
+  const groupedResults = React.useMemo(() => {
+    const groups: { [key in 'notes' | 'resources' | 'tasks' | 'ideas' | 'workspaces' | 'tags']: SearchResult[] } = {
+      notes: [],
+      resources: [],
+      tasks: [],
+      ideas: [],
+      workspaces: [],
+      tags: [],
+    };
+
+    results.forEach((item) => {
+      if (item.type === 'note') groups.notes.push(item);
+      else if (item.type === 'resource' || item.type === 'gdrive') groups.resources.push(item);
+      else if (item.type === 'task') groups.tasks.push(item);
+      else if (item.type === 'idea') groups.ideas.push(item);
+      else if (item.type === 'workspace') groups.workspaces.push(item);
+      else if (item.type === 'tag') groups.tags.push(item);
+    });
+
+    return groups;
+  }, [results]);
+
+  // Flattened array for keyboard navigation indexing
+  const flatSelectableItems = React.useMemo(() => {
+    return [
+      ...groupedResults.notes,
+      ...groupedResults.resources,
+      ...groupedResults.tasks,
+      ...groupedResults.ideas,
+      ...groupedResults.workspaces,
+      ...groupedResults.tags
+    ];
+  }, [groupedResults]);
 
   // Focus Search input on Cmd+K / Ctrl+K
   useEffect(() => {
@@ -124,14 +161,14 @@ export const Home: React.FC = () => {
       searchInputRef.current?.blur();
     } else if (e.key === 'ArrowDown') {
       e.preventDefault();
-      setSelectedIndex((prev) => (results.length ? (prev + 1) % results.length : 0));
+      setSelectedIndex((prev) => (flatSelectableItems.length ? (prev + 1) % flatSelectableItems.length : 0));
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
-      setSelectedIndex((prev) => (results.length ? (prev - 1 + results.length) % results.length : 0));
+      setSelectedIndex((prev) => (flatSelectableItems.length ? (prev - 1 + flatSelectableItems.length) % flatSelectableItems.length : 0));
     } else if (e.key === 'Enter') {
       e.preventDefault();
-      if (results[selectedIndex]) {
-        handleSelectSearchResult(results[selectedIndex]);
+      if (flatSelectableItems[selectedIndex]) {
+        handleSelectSearchResult(flatSelectableItems[selectedIndex]);
       }
     }
   };
@@ -144,6 +181,8 @@ export const Home: React.FC = () => {
       navigate(`/workspace/${item.id}`);
     } else if (item.type === 'gdrive') {
       if (item.url) window.open(item.url, '_blank');
+    } else if (item.type === 'tag') {
+      navigate(`/timeline?search=${encodeURIComponent(item.title)}`);
     } else if (item.workspaceId) {
       setActiveWorkspaceId(item.workspaceId);
       navigate(`/workspace/${item.workspaceId}`);
@@ -217,7 +256,7 @@ export const Home: React.FC = () => {
             ref={searchInputRef}
             id="home-search-input"
             type="text"
-            placeholder="Search notes, tasks, ideas, and resources..."
+            placeholder="Remember..."
             value={searchVal}
             onChange={(e) => setSearchVal(e.target.value)}
             onFocus={() => setIsSearchFocused(true)}
@@ -240,59 +279,87 @@ export const Home: React.FC = () => {
               initial={{ opacity: 0, y: 8, scale: 0.99 }}
               animate={{ opacity: 1, y: 4, scale: 1 }}
               exit={{ opacity: 0, y: 8, scale: 0.99 }}
-              className="absolute left-0 right-0 bg-card-bg border border-border-color rounded-[28px] shadow-2xl overflow-hidden mt-1 max-h-[350px] overflow-y-auto p-2 z-50"
+              className="absolute left-0 right-0 bg-card-bg border border-border-color rounded-[28px] shadow-2xl overflow-hidden mt-1 max-h-[400px] overflow-y-auto p-4 z-50 space-y-4"
             >
-              {results.length === 0 ? (
+              {flatSelectableItems.length === 0 ? (
                 <div className="py-8 text-center text-text-secondary text-sm">
                   No results found for "{searchVal}"
                 </div>
               ) : (
-                <div className="space-y-0.5">
-                  {results.map((item, index) => {
-                    const isSelected = index === selectedIndex;
+                <div className="space-y-4">
+                  {(Object.keys(groupedResults) as Array<keyof typeof groupedResults>).map((category) => {
+                    const items = groupedResults[category];
+                    if (items.length === 0) return null;
+
+                    let headerIcon = '📝';
+                    let headerLabel = 'Notes';
+                    if (category === 'resources') { headerIcon = '📚'; headerLabel = 'Resources'; }
+                    else if (category === 'tasks') { headerIcon = '✅'; headerLabel = 'Tasks'; }
+                    else if (category === 'ideas') { headerIcon = '💡'; headerLabel = 'Ideas'; }
+                    else if (category === 'workspaces') { headerIcon = '📁'; headerLabel = 'Projects'; }
+                    else if (category === 'tags') { headerIcon = '🏷️'; headerLabel = 'Tags'; }
+
                     return (
-                      <button
-                        key={item.id}
-                        onMouseDown={() => handleSelectSearchResult(item)}
-                        className={`w-full flex items-center justify-between gap-3 p-3 rounded-xl text-left transition-colors ${
-                          isSelected 
-                            ? 'bg-accent-light text-accent font-medium' 
-                            : 'text-text-primary hover:bg-accent-light/20'
-                        }`}
-                      >
-                        <div className="flex items-center gap-3 min-w-0">
-                          <div className={`p-2 rounded-lg flex-shrink-0 ${
-                            isSelected 
-                              ? 'bg-accent text-white' 
-                              : 'bg-bg-app text-text-secondary border border-border-color'
-                          }`}>
-                            {item.type === 'workspace' && <Folder className="w-4 h-4" />}
-                            {item.type === 'capture' && <MessageSquare className="w-4 h-4" />}
-                            {item.type === 'task' && <CheckSquare className="w-4 h-4" />}
-                            {item.type === 'resource' && <LinkIcon className="w-4 h-4" />}
-                            {item.type === 'gdrive' && <HardDrive className="w-4 h-4" />}
-                          </div>
-                          <div className="min-w-0">
-                            <div className="font-medium truncate text-sm">
-                              {item.title}
-                            </div>
-                            <div className={`text-xs truncate ${isSelected ? 'text-accent/80' : 'text-text-secondary'}`}>
-                              {item.subtitle} {item.workspaceName ? `in ${item.workspaceName}` : ''}
-                            </div>
-                            {item.snippet && (
-                              <div className="text-[11px] text-emerald-600 dark:text-emerald-400 font-mono mt-1 border-l-2 border-emerald-500/50 pl-2 max-w-lg truncate">
-                                {item.snippet}
-                              </div>
-                            )}
-                          </div>
+                      <div key={category} className="space-y-1">
+                        <div className="text-[10px] font-bold text-text-secondary uppercase tracking-[0.15em] px-2 py-1 flex items-center gap-1.5 select-none border-b border-border-color/40 pb-1 mb-1.5">
+                          <span className="text-xs">{headerIcon}</span>
+                          <span>{headerLabel} ({items.length})</span>
                         </div>
-                        {isSelected && (
-                          <div className="flex items-center gap-1 text-[10px] font-medium text-accent">
-                            <CornerDownLeft className="w-3.5 h-3.5" />
-                            <span>Go</span>
-                          </div>
-                        )}
-                      </button>
+                        <div className="space-y-0.5">
+                          {items.map((item) => {
+                            const globalIndex = flatSelectableItems.findIndex((x) => x.id === item.id);
+                            const isSelected = globalIndex === selectedIndex;
+                            return (
+                              <button
+                                key={item.id}
+                                onMouseDown={() => handleSelectSearchResult(item)}
+                                className={`w-full flex items-center justify-between gap-3 p-2.5 rounded-xl text-left transition-all duration-100 ${
+                                  isSelected 
+                                    ? 'bg-accent-light text-accent' 
+                                    : 'text-text-primary hover:bg-accent-light/20'
+                                }`}
+                              >
+                                <div className="flex items-center gap-3 min-w-0">
+                                  <div className={`p-1.5 rounded-lg flex-shrink-0 ${
+                                    isSelected 
+                                      ? 'bg-accent text-white' 
+                                      : 'bg-bg-app text-text-secondary border border-border-color'
+                                  }`}>
+                                    {item.type === 'workspace' && <Folder className="w-3.5 h-3.5" />}
+                                    {item.type === 'note' && <FileText className="w-3.5 h-3.5" />}
+                                    {item.type === 'task' && <CheckSquare className="w-3.5 h-3.5" />}
+                                    {item.type === 'resource' && <LinkIcon className="w-3.5 h-3.5" />}
+                                    {item.type === 'gdrive' && <HardDrive className="w-3.5 h-3.5" />}
+                                    {item.type === 'idea' && <MessageSquare className="w-3.5 h-3.5" />}
+                                    {item.type === 'tag' && <span className="text-[10px] font-bold font-mono">#</span>}
+                                  </div>
+                                  <div className="min-w-0">
+                                    <div className="font-semibold text-sm truncate leading-snug">
+                                      {item.title}
+                                    </div>
+                                    {item.type !== 'tag' && (
+                                      <div className={`text-xs truncate font-medium ${isSelected ? 'text-accent/80' : 'text-text-secondary'}`}>
+                                        {item.subtitle} {item.workspaceName ? `in ${item.workspaceName}` : ''}
+                                      </div>
+                                    )}
+                                    {item.snippet && (
+                                      <div className="text-[10px] text-emerald-600 dark:text-emerald-400 font-mono mt-1 border-l-2 border-emerald-500/50 pl-2 max-w-lg truncate">
+                                        {item.snippet}
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                                {isSelected && (
+                                  <div className="flex items-center gap-1 text-[10px] font-medium text-accent">
+                                    <CornerDownLeft className="w-3.5 h-3.5" />
+                                    <span>Go</span>
+                                  </div>
+                                )}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
                     );
                   })}
                 </div>
@@ -322,6 +389,12 @@ export const Home: React.FC = () => {
 
         {/* Right Column (Secondary / Sidebar Widgets) */}
         <div className="space-y-6">
+          {/* Storage Health Indicator */}
+          <StorageHealth />
+
+          {/* Passive Revision Engine */}
+          <RevisionEngine />
+
           {/* 5. Coming Up (Calendar) */}
           <CalendarWidget />
 

@@ -15,6 +15,15 @@ interface PinnedResourcesProps {
 export const PinnedResources: React.FC<PinnedResourcesProps> = ({ workspaceId = null, showAll = false }) => {
   const { toggleResourcePin, deleteResource } = useBaseStore();
 
+  const handleDeleteResource = async (id: string, title: string) => {
+    const confirmed = window.confirm(
+      `Remove "${title}"?\n\nIf it was backed up, your file is still recoverable for 30 days and anything stored in your Drive remains there.`
+    );
+
+    if (!confirmed) return;
+    await deleteResource(id);
+  };
+
   // Query resources
   const resources = useLiveQuery(async () => {
     let list: Resource[] = [];
@@ -157,17 +166,17 @@ export const PinnedResources: React.FC<PinnedResourcesProps> = ({ workspaceId = 
                     </div>
 
                     <div className="flex items-center justify-between mt-4 pt-3 border-t border-border-color/65">
-                      <span className="text-[10px] text-text-secondary truncate max-w-[120px]" title={`Workspace: ${res.workspaceName}`}>
-                        Workspace: <strong className="font-semibold text-text-primary">{res.workspaceName}</strong>
+                      <span className="text-[10px] text-text-secondary truncate max-w-[120px]" title={`Focus Mode: ${res.workspaceName}`}>
+                        Focus Mode: <strong className="font-semibold text-text-primary">{res.workspaceName}</strong>
                       </span>
 
                       <div className="flex items-center gap-1">
                         <Button
                           variant="ghost"
                           size="icon"
-                          onClick={() => deleteResource(res.id)}
+                          onClick={() => handleDeleteResource(res.id, res.title)}
                           className="h-7 w-7 text-text-secondary hover:text-rose-500 opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
-                          title="Delete resource"
+                          title="Remove resource. Backed up files remain recoverable for 30 days."
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </Button>

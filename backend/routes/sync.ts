@@ -1,7 +1,5 @@
 import express from 'express';
 import { authMiddleware, syncRateLimiter } from '../middleware/auth';
-import { query } from '../database/postgres';
-import { google } from 'googleapis';
 import {
   processSyncEvent,
   pullSyncChanges,
@@ -13,6 +11,8 @@ import {
   updateDeviceLastSeen,
   updateDeviceSyncVersion
 } from '../services/device.service';
+import { createGoogleDriveClientForUser, isMockGoogleConfigured } from '../services/google.service';
+import { query } from '../database/postgres';
 
 const router = express.Router();
 
@@ -59,7 +59,7 @@ router.post('/events', authMiddleware, syncRateLimiter, async (req, res) => {
     await updateDeviceLastSeen(deviceId);
 
     // Process sync events
-    const response = await processSyncEvent({
+    const response = await processSyncEvent(userId, {
       deviceId,
       syncVersion,
       events
@@ -154,13 +154,23 @@ router.post('/upload', authMiddleware, async (req, res) => {
   }
 });
 
+const formatBytes = (bytes: number, decimals = 1) => {
+  if (bytes === 0) return '0 Bytes';
+  const k = 1024;
+  const dm = decimals < 0 ? 0 : decimals;
+  const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+};
+
 // Google Drive Search
 router.get('/drive/search', authMiddleware, async (req, res) => {
   try {
+    const userId = req.user!.userId;
     const { query: searchQuery, email } = req.query;
     const qStr = (searchQuery as string || '').toLowerCase();
     
-    const isMock = process.env.GOOGLE_CLIENT_ID === 'MOCK_CLIENT_ID' || !process.env.GOOGLE_CLIENT_ID;
+    const isMock = isMockGoogleConfigured();
     
     if (isMock) {
       const mockFiles = [
@@ -175,7 +185,32 @@ router.get('/drive/search', authMiddleware, async (req, res) => {
       return res.json({ files: filtered });
     }
     
-    return res.json({ files: [] });
+    const driveContext = await createGoogleDriveClientForUser(userId, email as string);
+    if (!driveContext) {
+      return res.json({ files: [] });
+    }
+    
+    const { drive } = driveContext;
+    const escapedQuery = qStr.replace(/'/g, "\\'");
+    // Search for non-folders that are not trashed and match name query
+    const driveQuery = `name contains '${escapedQuery}' and mimeType != 'application/vnd.google-apps.folder' and trashed = false`;
+    
+    const response = await drive.files.list({
+      q: driveQuery,
+      fields: 'files(id, name, mimeType, webViewLink, size)',
+      pageSize: 30
+    });
+    
+    const files = (response.data.files || []).map((file) => ({
+      id: file.id,
+      name: file.name,
+      mimeType: file.mimeType,
+      webViewLink: file.webViewLink,
+      size: file.size ? formatBytes(parseInt(file.size)) : '0 Bytes',
+      account: email || driveContext.email || 'user'
+    }));
+    
+    return res.json({ files });
   } catch (error) {
     console.error('[Drive Search] Error:', error);
     res.status(500).json({ error: 'Failed to search Google Drive' });
@@ -185,7 +220,9 @@ router.get('/drive/search', authMiddleware, async (req, res) => {
 // Google Drive Folder List
 router.get('/drive/folders', authMiddleware, async (req, res) => {
   try {
-    const isMock = process.env.GOOGLE_CLIENT_ID === 'MOCK_CLIENT_ID' || !process.env.GOOGLE_CLIENT_ID;
+    const userId = req.user!.userId;
+    const { email } = req.query;
+    const isMock = isMockGoogleConfigured();
     
     if (isMock) {
       const mockFolders = [
@@ -197,10 +234,68 @@ router.get('/drive/folders', authMiddleware, async (req, res) => {
       return res.json({ folders: mockFolders });
     }
     
-    return res.json({ folders: [] });
+    const driveContext = await createGoogleDriveClientForUser(userId, email as string);
+    if (!driveContext) {
+      return res.json({ folders: [] });
+    }
+    
+    const { drive } = driveContext;
+    const response = await drive.files.list({
+      q: "mimeType = 'application/vnd.google-apps.folder' and trashed = false",
+      fields: 'files(id, name)',
+      pageSize: 50
+    });
+    
+    const folders = [
+      { id: 'f_root', name: 'My Drive (Root)', path: '/' },
+      ...(response.data.files || []).map((f) => ({
+        id: f.id,
+        name: f.name || '',
+        path: `/${f.name}`
+      }))
+    ];
+    
+    return res.json({ folders });
   } catch (error) {
     console.error('[Drive Folders] Error:', error);
     res.status(500).json({ error: 'Failed to fetch folders' });
+  }
+});
+
+// Google Drive Connected Accounts List
+router.get('/drive/accounts', authMiddleware, async (req, res) => {
+  try {
+    const userId = req.user!.userId;
+    const isMock = isMockGoogleConfigured();
+    
+    if (isMock) {
+      // Return a default mock account list if in mock mode
+      return res.json({
+        accounts: [
+          { email: 'tester@base.com', isActive: true, connectedAt: Date.now() - 86400000 * 2, fileCount: 24 }
+        ]
+      });
+    }
+
+    const tokenResult = await query(
+      `SELECT email, created_at
+       FROM oauth_tokens
+       WHERE user_id = $1 AND service = 'google'
+       ORDER BY created_at DESC`,
+      [userId]
+    );
+
+    const accounts = tokenResult.rows.map((row: any) => ({
+      email: row.email,
+      isActive: true,
+      connectedAt: row.created_at ? new Date(row.created_at).getTime() : Date.now(),
+      fileCount: 24
+    }));
+
+    return res.json({ accounts });
+  } catch (error) {
+    console.error('[Drive Accounts] Error:', error);
+    res.status(500).json({ error: 'Failed to fetch connected accounts' });
   }
 });
 
@@ -214,7 +309,7 @@ router.post('/drive/upload', authMiddleware, async (req, res) => {
       return res.status(400).json({ error: 'Missing email, fileName, or content' });
     }
 
-    const isMock = process.env.GOOGLE_CLIENT_ID === 'MOCK_CLIENT_ID' || !process.env.GOOGLE_CLIENT_ID;
+    const isMock = isMockGoogleConfigured();
     
     if (isMock) {
       await new Promise(r => setTimeout(r, 800));
@@ -226,69 +321,14 @@ router.post('/drive/upload', authMiddleware, async (req, res) => {
       });
     }
 
-    // 1. Fetch Google Tokens
-    let accessToken: string | null = null;
-    let refreshToken: string | null = null;
+    const driveContext = await createGoogleDriveClientForUser(userId, email);
 
-    const tokenResult = await query(
-      `SELECT encrypted_token as access_token, encrypted_refresh_token as refresh_token 
-       FROM oauth_tokens 
-       WHERE user_id = $1 AND email = $2 AND service = 'google'`,
-      [userId, email]
-    );
-
-    if (tokenResult.rows.length > 0) {
-      accessToken = tokenResult.rows[0].access_token;
-      refreshToken = tokenResult.rows[0].refresh_token;
-    }
-
-    if (!accessToken) {
-      const userResult = await query(
-        `SELECT google_access_token, google_refresh_token FROM users WHERE id = $1`,
-        [userId]
-      );
-      if (userResult.rows.length > 0) {
-        accessToken = userResult.rows[0].google_access_token;
-        refreshToken = userResult.rows[0].google_refresh_token;
-      }
-    }
-
-    if (!accessToken) {
+    if (!driveContext) {
       return res.status(401).json({ error: 'Google account not connected or unauthorized' });
     }
+    const { drive } = driveContext;
 
-    // 2. Initialize OAuth2 Client
-    const client = new google.auth.OAuth2(
-      process.env.GOOGLE_CLIENT_ID,
-      process.env.GOOGLE_CLIENT_SECRET,
-      process.env.GOOGLE_REDIRECT_URI
-    );
-    client.setCredentials({
-      access_token: accessToken,
-      refresh_token: refreshToken
-    });
-
-    // Save refreshed tokens automatically
-    client.on('tokens', async (newTokens) => {
-      if (newTokens.access_token) {
-        await query(
-          `UPDATE oauth_tokens 
-           SET encrypted_token = $1, expires_at = $2
-           WHERE user_id = $3 AND email = $4 AND service = 'google'`,
-          [newTokens.access_token, newTokens.expiry_date ? new Date(newTokens.expiry_date) : null, userId, email]
-        );
-        await query(
-          `UPDATE users 
-           SET google_access_token = $1, updated_at = CURRENT_TIMESTAMP
-           WHERE id = $2`,
-          [newTokens.access_token, userId]
-        );
-      }
-    });
-
-    const drive = google.drive({ version: 'v3', auth: client });
-
-    // 3. Decode base64 file content
+    // 1. Decode base64 file content
     const fileBuffer = Buffer.from(content, 'base64');
     const { Readable } = require('stream');
     const media = {
@@ -296,10 +336,10 @@ router.post('/drive/upload', authMiddleware, async (req, res) => {
       body: Readable.from(fileBuffer)
     };
 
-    // 4. Determine parent folders
+    // 2. Determine parent folders
     const parents = folderId && folderId !== 'f_root' ? [folderId] : [];
 
-    // 5. Upload to Google Drive
+    // 3. Upload to Google Drive
     const uploadRes = await drive.files.create({
       requestBody: {
         name: fileName,

@@ -5,10 +5,11 @@ import { Readable } from 'stream';
 import { query } from '../database/postgres';
 import { SyncRequest, SyncResponse, SyncPullResponse, SyncEvent } from '../models/types';
 import { getStorageProvider } from './storage.service';
+import { getGoogleTokensForUser } from './google.service';
 
 let globalSyncVersion = 0;
 
-export const processSyncEvent = async (syncRequest: SyncRequest): Promise<SyncResponse> => {
+export const processSyncEvent = async (userId: string, syncRequest: SyncRequest): Promise<SyncResponse> => {
   try {
     const { deviceId, syncVersion, events } = syncRequest;
 
@@ -28,9 +29,9 @@ export const processSyncEvent = async (syncRequest: SyncRequest): Promise<SyncRe
       // Check for conflicts using content hash
       const existingEvent = await query(
         `SELECT * FROM sync_events 
-         WHERE content_id = $1 AND content_hash != $2
+         WHERE user_id = $1 AND content_id = $2 AND content_hash != $3
          ORDER BY timestamp DESC LIMIT 1`,
-        [event.id, event.hash]
+        [userId, event.id, event.hash]
       );
 
       if (existingEvent.rows.length > 0) {
@@ -46,7 +47,7 @@ export const processSyncEvent = async (syncRequest: SyncRequest): Promise<SyncRe
           `INSERT INTO sync_conflicts (user_id, content_id, device_1_id, device_2_id, device_1_version, device_2_version, resolution)
            VALUES ($1, $2, $3, $4, $5, $6, $7)`,
           [
-            conflict.user_id,
+            userId,
             event.id,
             deviceId,
             conflict.device_id,
@@ -63,7 +64,7 @@ export const processSyncEvent = async (syncRequest: SyncRequest): Promise<SyncRe
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
         [
           eventId,
-          'user_id_placeholder', // Will be set by auth middleware
+          userId,
           deviceId,
           event.type,
           event.id,
@@ -214,37 +215,7 @@ export const uploadBackup = async (userId: string, data: any, email?: string): P
                       (data.resources?.length || 0);
     const sizeInBytes = Buffer.byteLength(JSON.stringify(data));
 
-    // 2. Fetch credentials (Google Tokens used if Google Drive is active)
-    let accessToken: string | null = null;
-    let refreshToken: string | null = null;
-    let targetEmail: string | null = email || null;
-
-    if (email) {
-      const tokenResult = await query(
-        `SELECT encrypted_token as access_token, encrypted_refresh_token as refresh_token 
-         FROM oauth_tokens 
-         WHERE user_id = $1 AND email = $2 AND service = 'google'`,
-        [userId, email]
-      );
-      if (tokenResult.rows.length > 0) {
-        accessToken = tokenResult.rows[0].access_token;
-        refreshToken = tokenResult.rows[0].refresh_token;
-      }
-    }
-
-    if (!accessToken) {
-      const userResult = await query(
-        `SELECT email, google_access_token, google_refresh_token FROM users WHERE id = $1`,
-        [userId]
-      );
-      if (userResult.rows.length > 0) {
-        accessToken = userResult.rows[0].google_access_token;
-        refreshToken = userResult.rows[0].google_refresh_token;
-        if (!targetEmail) {
-          targetEmail = userResult.rows[0].email;
-        }
-      }
-    }
+    const tokenRecord = await getGoogleTokensForUser(userId, email);
 
     // Gzip compress the JSON payload
     const gzipBuffer = zlib.gzipSync(JSON.stringify(data));
@@ -261,9 +232,9 @@ export const uploadBackup = async (userId: string, data: any, email?: string): P
           mimeType: 'application/gzip'
         },
         {
-          accessToken,
-          refreshToken,
-          email: targetEmail || undefined
+          accessToken: tokenRecord.accessToken,
+          refreshToken: tokenRecord.refreshToken,
+          email: tokenRecord.email || undefined
         }
       );
       driveLocation = uploadResult.driveLocation;
