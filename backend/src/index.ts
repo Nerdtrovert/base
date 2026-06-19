@@ -68,6 +68,12 @@ const startServer = async () => {
   const frontendDistPath = path.resolve(__dirname, '../../../frontend/dist');
   const frontendIndexPath = path.join(frontendDistPath, 'index.html');
 
+  console.log('[Server] Static Files Path Debug:');
+  console.log('  - __dirname:', __dirname);
+  console.log('  - Resolved frontendDistPath:', frontendDistPath);
+  console.log('  - Resolved frontendIndexPath:', frontendIndexPath);
+  console.log('  - File index.html exists?:', fs.existsSync(frontendIndexPath));
+
   if (fs.existsSync(frontendIndexPath)) {
     app.use(express.static(frontendDistPath));
 
@@ -76,11 +82,7 @@ const startServer = async () => {
         return next();
       }
 
-      if (req.accepts('html')) {
-        return res.sendFile(frontendIndexPath);
-      }
-
-      return next();
+      res.sendFile(frontendIndexPath);
     });
   }
 

@@ -8,3 +8,10 @@ services:
     envVars:
       - key: VITE_API_URL
         sync: false
+    routes:
+      - type: rewrite
+        source: /api/*
+        destination: https://base-backend-ep08.onrender.com/api/*
+      - type: rewrite
+        source: /*
+        destination: /index.html

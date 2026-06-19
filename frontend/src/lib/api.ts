@@ -5,19 +5,21 @@ export const getApiBaseUrl = (): string => {
     return 'http://localhost:5001';
   }
 
+  const { hostname, origin, protocol } = window.location;
+
+  // In production (Render, or any production HTTPS site), we route API requests
+  // through the frontend origin using Render's rewrite rules to avoid cross-site cookie blocking.
+  if (hostname.includes('onrender.com') || protocol === 'https:') {
+    return origin;
+  }
+
   const configuredUrl = import.meta.env.VITE_API_URL as string | undefined;
   if (configuredUrl && configuredUrl.trim()) {
     return normalizeBaseUrl(configuredUrl.trim());
   }
 
-  const { hostname, origin, protocol } = window.location;
-
   if (hostname.includes('devtunnels.ms')) {
     return origin.replace('-5173', '-5001');
-  }
-
-  if (hostname.includes('onrender.com') || protocol === 'https:') {
-    return origin;
   }
 
   return `http://${hostname}:5001`;

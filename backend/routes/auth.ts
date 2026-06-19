@@ -24,14 +24,19 @@ const PENDING_GDRIVE_MAX_AGE_MS = 10 * 60 * 1000;
 
 const getCookieOptions = (req: any) => {
   const origin = req.headers.origin;
+  const host = req.headers.host;
   const isDevTunnel = origin && origin.includes('devtunnels.ms');
   const isRender = origin && origin.includes('onrender.com');
   const isProd = process.env.NODE_ENV === 'production';
   
+  // If origin is not provided, or matches the current host, it is a same-site request.
+  // We should use 'lax' cookies. We only need 'none' if it is cross-site (e.g. devtunnels or separate domains).
+  const isSameSite = !origin || (host && origin.includes(host));
+  
   return {
     httpOnly: true,
     secure: isDevTunnel || isRender || isProd,
-    sameSite: (isDevTunnel || isRender) ? 'none' as const : 'lax' as const,
+    sameSite: (isDevTunnel || (isRender && !isSameSite)) ? 'none' as const : 'lax' as const,
     maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
   };
 };
