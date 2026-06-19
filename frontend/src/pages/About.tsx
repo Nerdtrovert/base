@@ -1,9 +1,33 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { motion } from 'framer-motion';
 import type { Variants } from 'framer-motion';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { useLiveQuery } from 'dexie-react-hooks';
+import { db } from '../services/db';
+import { useBaseStore } from '../store/useBaseStore';
 import { BrandMark } from '../components/BrandMark';
+import { Button } from '../components/ui/button';
+import { CheckCircle2, Loader2, ArrowRight, Sparkles, AlertCircle } from 'lucide-react';
 
 export const About: React.FC = () => {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const queryParams = new URLSearchParams(location.search);
+  const isOnboarding = queryParams.get('onboarding') === 'true';
+
+  const { syncStatus, isAuthenticated, triggerSync } = useBaseStore();
+  const pendingSyncCount = useLiveQuery(() => db.syncQueue.count()) ?? 0;
+
+  useEffect(() => {
+    if (isOnboarding && isAuthenticated) {
+      triggerSync(true);
+    }
+  }, [isOnboarding, isAuthenticated, triggerSync]);
+
+  const isSyncing = isAuthenticated && (syncStatus === 'syncing' || pendingSyncCount > 0);
+  const isError = isAuthenticated && syncStatus === 'error';
+  const isSuccess = !isAuthenticated || syncStatus === 'success' || (syncStatus === 'idle' && pendingSyncCount === 0);
+
   const containerVariants: Variants = {
     hidden: { opacity: 0 },
     visible: {
@@ -79,6 +103,109 @@ export const About: React.FC = () => {
             "Built to remember the little things, so students can focus on the big ones."
           </p>
         </motion.section>
+
+        {/* Onboarding Status Card */}
+        {isOnboarding && (
+          <motion.div
+            variants={itemVariants}
+            className={`p-6 md:p-8 rounded-[2rem] border bg-card-bg/35 backdrop-blur-xs shadow-card-shadow relative overflow-hidden transition-all duration-500 ${
+              isSuccess
+                ? 'border-emerald-500/30 shadow-emerald-500/5'
+                : isError
+                ? 'border-amber-500/30 shadow-amber-500/5'
+                : 'border-accent/30 shadow-accent/5'
+            }`}
+          >
+            {/* Background glowing decorations */}
+            <div className={`absolute -right-8 -top-8 w-24 h-24 rounded-full blur-xl pointer-events-none transition-colors duration-500 ${
+              isSuccess ? 'bg-emerald-500/10' : isError ? 'bg-amber-500/10' : 'bg-accent/10'
+            }`} />
+            <div className={`absolute -left-8 -bottom-8 w-24 h-24 rounded-full blur-xl pointer-events-none transition-colors duration-500 ${
+              isSuccess ? 'bg-emerald-500/5' : isError ? 'bg-amber-500/5' : 'bg-accent/5'
+            }`} />
+
+            {isSyncing && (
+              <div className="space-y-4 text-center py-4 relative z-10">
+                <div className="flex justify-center">
+                  <div className="relative">
+                    <div className="absolute inset-0 rounded-full bg-accent/20 blur-md animate-ping" />
+                    <Loader2 className="w-10 h-10 text-accent animate-spin relative z-10" />
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <h3 className="text-base font-bold text-text-primary">
+                    Assembling secure memory layers...
+                  </h3>
+                  <p className="text-xs text-text-secondary max-w-sm mx-auto leading-relaxed">
+                    Connecting to Google Drive and configuring your automatic background protection. This will only take a moment.
+                  </p>
+                </div>
+                {pendingSyncCount > 0 && (
+                  <p className="text-[10px] font-mono text-accent font-semibold animate-pulse">
+                    Syncing {pendingSyncCount} pending change{pendingSyncCount === 1 ? '' : 's'}...
+                  </p>
+                )}
+              </div>
+            )}
+
+            {isError && (
+              <div className="space-y-4 text-center py-4 relative z-10">
+                <div className="flex justify-center">
+                  <div className="h-10 w-10 rounded-full bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-500">
+                    <AlertCircle className="w-5 h-5" />
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <h3 className="text-base font-bold text-text-primary">
+                    Sync is taking longer than expected
+                  </h3>
+                  <p className="text-xs text-text-secondary max-w-sm mx-auto leading-relaxed">
+                    Your changes are saved locally on this device, but we couldn't complete the cloud backup right now. Don't worry, your data is safe.
+                  </p>
+                </div>
+                <div className="pt-2 flex justify-center">
+                  <Button
+                    onClick={() => navigate('/')}
+                    className="bg-amber-600 hover:bg-amber-700 text-white font-semibold px-6 py-2 rounded-xl flex items-center gap-2 cursor-pointer shadow-xs text-xs border-none"
+                  >
+                    <span>Proceed to Workspace</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {isSuccess && (
+              <div className="space-y-5 text-center py-2 relative z-10 animate-fade-in">
+                <div className="flex justify-center">
+                  <div className="relative">
+                    <div className="absolute inset-0 rounded-full bg-emerald-500/20 blur-md animate-pulse" />
+                    <CheckCircle2 className="w-12 h-12 text-emerald-500 relative z-10" />
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <h3 className="text-base font-bold text-text-primary flex items-center justify-center gap-1.5">
+                    <Sparkles className="w-4 h-4 text-accent animate-pulse" />
+                    <span>Onboarding Complete!</span>
+                  </h3>
+                  <p className="text-xs text-text-secondary max-w-sm mx-auto leading-relaxed">
+                    Your local storage is configured and quiet background protection is active. Welcome to your calm workspace.
+                  </p>
+                </div>
+                <div className="pt-2 flex justify-center">
+                  <Button
+                    onClick={() => navigate('/')}
+                    className="bg-accent hover:bg-accent/90 text-white font-bold px-8 py-3 rounded-xl flex items-center gap-2 cursor-pointer shadow-md hover:scale-102 transition-all duration-200 border-none group relative overflow-hidden"
+                  >
+                    <div className="absolute inset-0 bg-white/10 opacity-0 group-hover:opacity-100 transition-opacity" />
+                    <span>Your Base is Ready</span>
+                    <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                  </Button>
+                </div>
+              </div>
+            )}
+          </motion.div>
+        )}
 
         {/* 2. Why Base? */}
         <motion.section variants={itemVariants} className="space-y-4">
@@ -163,7 +290,7 @@ export const About: React.FC = () => {
             </span>
           </div>
           <p className="text-[11px] font-mono text-text-muted">
-            Version 1.1.0
+            Version 1.1.5
           </p>
           <p className="text-[11px] text-text-secondary/80 leading-relaxed max-w-xs mx-auto font-normal">
             Built to remember the little things, <br />

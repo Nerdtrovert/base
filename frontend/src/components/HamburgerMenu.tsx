@@ -7,8 +7,9 @@ import {
   Menu, X, Cloud, Plus, Trash2, Folder, Calendar, 
   ArrowRight, ChevronLeft, ChevronRight, CheckSquare, 
   Check, HardDrive, LogIn, LogOut, User as UserIcon,
-  Bell, BellOff, Info
+  Bell, BellOff, Info, Laptop, Smartphone, Loader2
 } from 'lucide-react';
+import { BACKEND_URL } from '../lib/api';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -16,6 +17,7 @@ import { useNavigate } from 'react-router-dom';
 import { BrandMark } from './BrandMark';
 import { StorageHealth } from './StorageHealth';
 import { subscribeToPushNotifications, checkNotificationPermission, isPushSupported } from '../utils/pushNotifications';
+import { traverseAndIndexDirectory, indexFileList } from '../utils/localFolderIndexer';
 
 export const HamburgerMenu: React.FC = () => {
   const { 
@@ -57,6 +59,11 @@ export const HamburgerMenu: React.FC = () => {
   // Push status states
   const [pushStatus, setPushStatus] = useState<'default' | 'granted' | 'denied' | 'unsupported'>('default');
   const [isSubscribing, setIsSubscribing] = useState(false);
+
+  // Devices states
+  const [showDevicesModal, setShowDevicesModal] = useState(false);
+  const [devices, setDevices] = useState<any[]>([]);
+  const [isLoadingDevices, setIsLoadingDevices] = useState(false);
 
   // Calendar navigation states
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -113,6 +120,49 @@ export const HamburgerMenu: React.FC = () => {
     }
   };
 
+  const fetchDevices = async () => {
+    setIsLoadingDevices(true);
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/devices`, {
+        credentials: 'include'
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setDevices(data.devices || []);
+      }
+    } catch (e) {
+      console.error('Failed to fetch devices:', e);
+      showCompanionMessage('Failed to load connected devices.', 'warning');
+    } finally {
+      setIsLoadingDevices(false);
+    }
+  };
+
+  const handleDisconnectDevice = async (deviceId: string) => {
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/devices/${deviceId}`, {
+        method: 'DELETE',
+        credentials: 'include'
+      });
+      if (response.ok) {
+        showCompanionMessage('Device disconnected successfully.', 'success');
+        fetchDevices();
+        
+        const currentDeviceId = useBaseStore.getState().deviceId;
+        if (deviceId === currentDeviceId) {
+          logout();
+          setIsOpen(false);
+          setShowDevicesModal(false);
+        }
+      } else {
+        showCompanionMessage('Failed to disconnect device.', 'warning');
+      }
+    } catch (e) {
+      console.error('Failed to disconnect device:', e);
+      showCompanionMessage('Failed to disconnect device.', 'warning');
+    }
+  };
+
   const handleAddDrive = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newDriveEmail.trim()) return;
@@ -162,7 +212,12 @@ export const HamburgerMenu: React.FC = () => {
           localPath: folderName,
           createdAt: Date.now()
         });
-        showCompanionMessage(`Mounted local folder: ${folderName}`, 'success');
+        
+        showCompanionMessage(`Indexing files in "${folderName}"...`, 'info');
+        await traverseAndIndexDirectory(handle, (filename) => {
+          showCompanionMessage(`Indexing: ${filename}`, 'info', 1000);
+        });
+        showCompanionMessage(`Mounted and indexed local folder: ${folderName}`, 'success');
       } else {
         // Fallback for mobile and other browsers
         const input = document.createElement('input');
@@ -185,7 +240,12 @@ export const HamburgerMenu: React.FC = () => {
               localPath: folderName,
               createdAt: Date.now()
             });
-            showCompanionMessage(`Mounted local folder: ${folderName}`, 'success');
+            
+            showCompanionMessage(`Indexing files in "${folderName}"...`, 'info');
+            await indexFileList(files, (filename) => {
+              showCompanionMessage(`Indexing: ${filename}`, 'info', 1000);
+            });
+            showCompanionMessage(`Mounted and indexed local folder: ${folderName}`, 'success');
           }
         };
         input.click();
@@ -635,6 +695,29 @@ export const HamburgerMenu: React.FC = () => {
                     </div>
                   )}
 
+                  {/* Connected Devices (visible only if logged in/authenticated) */}
+                  {isAuthenticated && (
+                    <div className="space-y-3 pt-2">
+                      <div className="text-[10px] font-bold text-text-secondary uppercase tracking-[0.2em]">
+                        <span>DEVICES</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          fetchDevices();
+                          setShowDevicesModal(true);
+                        }}
+                        className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl border border-border-color bg-bg-app/40 hover:bg-bg-app text-left transition-colors cursor-pointer"
+                      >
+                        <div className="flex items-center gap-3 text-xs font-medium text-text-primary">
+                          <Laptop className="w-4 h-4 text-accent" />
+                          <span>Connected Devices</span>
+                        </div>
+                        <ArrowRight className="w-3.5 h-3.5 text-text-secondary" />
+                      </button>
+                    </div>
+                  )}
+
                   {/* 5. About Link */}
                   <div className="space-y-3 pt-2">
                     <div className="text-[10px] font-bold text-text-secondary uppercase tracking-[0.2em]">
@@ -898,6 +981,113 @@ export const HamburgerMenu: React.FC = () => {
                       )}
                     </div>
                   </div>
+                </motion.div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Devices Modal Overlay */}
+          <AnimatePresence>
+            {showDevicesModal && (
+              <motion.div
+                key="devices-modal-wrapper"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={(e) => {
+                  if (e.target === e.currentTarget) setShowDevicesModal(false);
+                }}
+                className="fixed inset-0 z-[9999] flex items-center justify-center px-4 bg-black/60 backdrop-blur-[2px]"
+              >
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.95, y: 15 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.95, y: 15 }}
+                  transition={{ type: 'spring', damping: 25, stiffness: 350 }}
+                  className="w-full max-w-xl bg-card-bg border border-border-color rounded-[28px] p-6 md:p-8 shadow-2xl relative z-10 overflow-hidden flex flex-col animate-fade-in"
+                >
+                  <div className="flex items-center justify-between mb-6 pb-4 border-b border-border-color">
+                    <div className="flex items-center gap-2">
+                      <Laptop className="w-5 h-5 text-accent" />
+                      <h3 className="text-lg font-bold text-text-primary">Connected Devices</h3>
+                      <span className="bg-bg-app border border-border-color text-text-secondary text-[10px] font-mono px-2 py-0.5 rounded-md">
+                        {devices.length}
+                      </span>
+                    </div>
+                    <Button
+                      onClick={() => setShowDevicesModal(false)}
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 rounded-lg"
+                    >
+                      <X className="w-4 h-4 text-text-secondary" />
+                    </Button>
+                  </div>
+
+                  {isLoadingDevices ? (
+                    <div className="py-12 text-center">
+                      <Loader2 className="w-8 h-8 text-accent animate-spin mx-auto mb-2" />
+                      <p className="text-xs text-text-secondary">Loading registered devices...</p>
+                    </div>
+                  ) : (
+                    <div className="flex-grow overflow-y-auto space-y-3 max-h-[50vh] pr-1">
+                      {devices.map((device) => {
+                        const isCurrent = device.id === useBaseStore.getState().deviceId;
+                        return (
+                          <div 
+                            key={device.id}
+                            className={`p-4 rounded-2xl border flex items-center justify-between gap-4 transition-all bg-bg-app/20 text-left ${
+                              isCurrent ? 'border-accent/40 bg-accent/3' : 'border-border-color hover:border-accent/20'
+                            }`}
+                          >
+                            <div className="flex items-center gap-3 min-w-0">
+                              <div className="w-9 h-9 rounded-xl bg-bg-app border border-border-color flex items-center justify-center text-text-secondary shrink-0">
+                                {device.device_type === 'mobile' ? (
+                                  <Smartphone className="w-4 h-4 text-accent" />
+                                ) : (
+                                  <Laptop className="w-4 h-4 text-accent" />
+                                )}
+                              </div>
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-1.5">
+                                  <h4 className="font-bold text-text-primary text-xs truncate">
+                                    {device.device_name}
+                                  </h4>
+                                  {isCurrent && (
+                                    <span className="bg-accent/15 border border-accent/20 text-accent text-[8px] font-bold px-1.5 py-0.25 rounded-md uppercase tracking-wider">
+                                      Current
+                                    </span>
+                                  )}
+                                </div>
+                                <p className="text-[10px] text-text-secondary mt-0.5">
+                                  Last active: {new Date(device.last_seen).toLocaleString()}
+                                </p>
+                                <p className="text-[9px] text-text-muted mt-0.5">
+                                  Last sync: {new Date(device.last_sync).toLocaleString()} (Version: {device.sync_version})
+                                </p>
+                              </div>
+                            </div>
+                            <Button
+                              onClick={() => handleDisconnectDevice(device.id)}
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-rose-500 hover:text-rose-600 hover:bg-rose-500/10 rounded-lg shrink-0"
+                              title={isCurrent ? "Log out of this device" : "Revoke device access"}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        );
+                      })}
+
+                      {devices.length === 0 && (
+                        <div className="text-center py-12 border border-dashed border-border-color rounded-[28px] bg-bg-app/20 animate-fade-in">
+                          <Laptop className="w-8 h-8 mx-auto text-text-secondary/40 mb-2" />
+                          <p className="text-sm text-text-primary font-semibold">No registered devices</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </motion.div>
               </motion.div>
             )}

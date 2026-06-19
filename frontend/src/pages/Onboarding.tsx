@@ -7,6 +7,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { BrandMark } from '../components/BrandMark';
 import { ArrowRight, ArrowLeft, HardDrive, Check, ShieldCheck, FolderPlus, Info, FolderOpen, AlertCircle } from 'lucide-react';
 import { Button } from '../components/ui/button';
+import { traverseAndIndexDirectory, indexFileList } from '../utils/localFolderIndexer';
 
 export const Onboarding: React.FC = () => {
   const navigate = useNavigate();
@@ -123,7 +124,7 @@ export const Onboarding: React.FC = () => {
       
       // Delay redirection slightly for user to see check animation
       setTimeout(() => {
-        navigate('/', { replace: true });
+        navigate('/about?onboarding=true', { replace: true });
       }, 1500);
     } catch (err) {
       console.error(err);
@@ -148,11 +149,16 @@ export const Onboarding: React.FC = () => {
           createdAt: Date.now()
         });
         
+        showCompanionMessage(`Indexing files in "${folderName}"...`, 'info');
+        await traverseAndIndexDirectory(handle, (filename) => {
+          showCompanionMessage(`Indexing: ${filename}`, 'info', 1000);
+        });
+        
         setIsMounting(false);
         setMountedSuccess(true);
-        showCompanionMessage('Local folder mounted successfully!', 'success');
+        showCompanionMessage('Local folder mounted and indexed successfully!', 'success');
         setTimeout(() => {
-          navigate('/', { replace: true });
+          navigate('/about?onboarding=true', { replace: true });
         }, 1500);
       } else {
         // Fallback for mobile and other browsers
@@ -177,11 +183,16 @@ export const Onboarding: React.FC = () => {
               createdAt: Date.now()
             });
             
+            showCompanionMessage(`Indexing files in "${folderName}"...`, 'info');
+            await indexFileList(files, (filename) => {
+              showCompanionMessage(`Indexing: ${filename}`, 'info', 1000);
+            });
+            
             setIsMounting(false);
             setMountedSuccess(true);
-            showCompanionMessage('Local folder mounted successfully!', 'success');
+            showCompanionMessage('Local folder mounted and indexed successfully!', 'success');
             setTimeout(() => {
-              navigate('/', { replace: true });
+              navigate('/about?onboarding=true', { replace: true });
             }, 1500);
           } else {
             setIsMounting(false);

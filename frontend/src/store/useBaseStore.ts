@@ -65,7 +65,7 @@ interface BaseState {
   toggleTask: (id: string) => Promise<void>;
   deleteTask: (id: string) => Promise<void>;
   
-  createResource: (params: { title: string; url: string; type: Resource['type']; workspaceId: string | null; extractedText?: string }) => Promise<void>;
+  createResource: (params: { title: string; url: string; type: Resource['type']; workspaceId: string | null; extractedText?: string; mimeType?: string }) => Promise<void>;
   toggleResourcePin: (id: string) => Promise<void>;
   deleteResource: (id: string) => Promise<void>;
 
@@ -508,7 +508,7 @@ export const useBaseStore = create<BaseState>((set, get) => ({
   // ----------------------------------------------------
   // Resource Mutations
   // ----------------------------------------------------
-  createResource: async ({ title, url, type, workspaceId, extractedText }) => {
+  createResource: async ({ title, url, type, workspaceId, extractedText, mimeType }) => {
     const id = crypto.randomUUID();
     const resolvedWsId = workspaceId || await resolveWorkspaceId(title, url, get().activeWorkspaceId);
     const resource: Resource = {
@@ -517,6 +517,7 @@ export const useBaseStore = create<BaseState>((set, get) => ({
       title,
       url,
       type,
+      mimeType,
       pinned: false,
       createdAt: Date.now(),
       extractedText
@@ -778,8 +779,9 @@ export const useBaseStore = create<BaseState>((set, get) => ({
       const captures = await db.captures.toArray();
       const tasks = await db.tasks.toArray();
       const resources = await db.resources.toArray();
+      const knowledgeSources = await db.knowledgeSources.toArray();
 
-      const dump = { workspaces, captures, tasks, resources };
+      const dump = { workspaces, captures, tasks, resources, knowledgeSources };
 
       // Multi-Account sync selection
       const activeAccount = get().connectedDriveAccounts.find(acc => acc.isActive);
@@ -877,7 +879,8 @@ export const useBaseStore = create<BaseState>((set, get) => ({
       const captures = await db.captures.toArray();
       const tasks = await db.tasks.toArray();
       const resources = await db.resources.toArray();
-      const dump = { workspaces, captures, tasks, resources };
+      const knowledgeSources = await db.knowledgeSources.toArray();
+      const dump = { workspaces, captures, tasks, resources, knowledgeSources };
 
       const activeAccount = get().connectedDriveAccounts.find(acc => acc.isActive);
       const email = activeAccount ? activeAccount.email : undefined;

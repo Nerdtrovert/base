@@ -28,6 +28,25 @@ function AppContent() {
     checkAuthStatus();
   }, [checkAuthStatus]);
 
+  // Request persistent storage on mount to prevent browser eviction
+  useEffect(() => {
+    if (navigator.storage && navigator.storage.persist) {
+      navigator.storage.persisted().then((persisted) => {
+        if (!persisted) {
+          navigator.storage.persist().then((granted) => {
+            if (granted) {
+              console.log('[Storage] Persistent storage permission granted.');
+            } else {
+              console.warn('[Storage] Persistent storage permission denied. Browser may evict data under storage pressure.');
+            }
+          });
+        } else {
+          console.log('[Storage] Storage is already persisted.');
+        }
+      });
+    }
+  }, []);
+
   // Listen for PWA installation availability
   useEffect(() => {
     const handleBeforeInstallPrompt = (e: Event) => {

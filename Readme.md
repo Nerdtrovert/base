@@ -10,7 +10,7 @@ Its goal is simple:
 
 ---
 
-## 🧠 Product Vision
+## 🧠 Product Vision & Core Principles
 
 Base is not:
 - ❌ Another notes app
@@ -18,217 +18,123 @@ Base is not:
 - ❌ Another cloud drive
 - ❌ Another productivity dashboard
 
-Base is a **smart notebook** that quietly remembers everything surrounding your work.
-Open it, continue where you left off, and get back to thinking.
+Base is built on a **Local First • User Owned Data** philosophy:
+- **IndexedDB (Dexie) is Primary:** All writes and reads happen instantly in local IndexedDB. The UI updates optimistically within milliseconds.
+- **Offline First:** Fully functional without an internet connection. Changes are queued locally and synchronized quietly in the background when connectivity resumes.
+- **Zero-Friction Backup:** Users never manually click "Save" or "Sync". Data protection runs silently.
 
 ---
 
 ## ✨ Features
 
 ### 💡 Universal Capture
-
-Capture thoughts instantly.
-- Notes
-- Images
-- Links
-- References
-No folders. No tags. No unnecessary decisions.
-
----
+Capture thoughts instantly (notes, images, links, references) without folders, tags, or friction.
 
 ### 🔍 Universal Search
-
-Search everything from one place.
-
-- Workspaces
-- Notes
-- Tasks
-- Resources
-- Timeline
-- Recent captures
-
-Search becomes navigation.
-
----
+Unified search index powered by Fuse.js for workspaces, notes, tasks, timeline events, and local resource contents.
 
 ### 📚 Workspaces
+Organize naturally by subject or project. Each workspace tracks its own timeline, tasks, and reference assets.
 
-Organize work naturally by:
-- Semester
-- Subject
-- Project
-Each workspace maintains its own timeline, tasks, resources, and notes.
-
----
-
-### 🕒 Timeline
-
-Every interaction becomes part of a chronological project memory.
-
-Remember:
-- what you saved,
-- why you saved it,
-- and when you worked on it.
----
+### 🕒 Chronological Timeline
+Every capture, edit, and interaction is saved chronologically to reconstruct your cognitive history.
 
 ### ✅ Smart Tasks
+A calendar and list view (Today, Tomorrow, Upcoming, Completed) built to reduce pressure.
 
-A simple task view:
-- Today
-- Tomorrow
-- Next 7 Days
-- Completed
-No productivity scores.
-No streaks.
-No pressure.
+### 📁 Local Directory & PDF Indexing (Laptops & Mobile)
+Base indexes local folders recursively to build full-text search databases of your learning resources.
+- **Laptops/Desktops:** Leverages the native *File System Access API* (`showDirectoryPicker`) for recursive folder traversal.
+- **Mobile Browsers:** Uses a custom *webkitdirectory file picker fallback* for selecting directories.
+- **Content Parsing:** Extracts text contents from `.pdf` documents using `pdfjs-dist` alongside raw `.txt`/`.md` files to allow deep search.
 
----
+### ☁️ Automatic Background Sync & Protection
+- **Dexie Sync Queue:** Every local mutation enqueues a sync event. The background sync worker (`processSyncQueue`) processes these events.
+- **Google Drive Snapshotting:** Compresses and uploads database snapshots (workspaces, captures, tasks, resources, and mounted folder sources) directly into the user's private Google Drive storage.
+- **In-Flight Safety Guards:** Utilizes the browser `beforeunload` events to prompt users if they attempt to exit the tab with unsynced changes.
+- **Reconnect Triggers:** Registers `online` status listeners to automatically run sync as soon as internet connection resumes.
 
-### 📌 Resources
+### 📱 PWA & Persistent Storage (Wipeout Protection)
+- **Installable PWA:** Installable directly in mobile and desktop browsers for native offline operations.
+- **Storage Persistence:** On startup, Base requests persistent storage access (`navigator.storage.persist()`). The browser white-lists Base, ensuring IndexedDB data is never evicted due to browser upgrades, redeploys, or device storage pressure.
 
-Base doesn't duplicate your files.
-Instead, it remembers them.
-Resources can point to:
-- Google Drive
-- Local Files
-- PDFs
-- Images
-- External Links
+### 🔔 Quiet VAPID Push Notifications
+- Registers Service Workers and exchanges VAPID keys for quiet background push reminders.
+- Schedules calendar event reminders (4 hours before check-ins) and quiet motivational morning focus prompts in the background.
 
-> Your files stay where they are. Base simply remembers them.
-
----
-
-### 📅 Coming Up
-
-A lightweight calendar widget displaying the next three upcoming events for a quick overview of what's next.
-
----
-
-## 🎯 Philosophy
-
-Base follows a few simple principles:
-- Capture first, organize later.
-- Search instead of navigation.
-- Workspaces instead of folders.
-- Context over storage.
-- Local-first, cloud-enabled.
-- Calm over productivity pressure.
-Every feature should reduce cognitive load rather than add to it.
+### 💻 Multi-Device Session Manager
+- A dedicated **Connected Devices Manager Modal** under settings lets users monitor active sessions, device types (laptops, phones), last active timestamps, sync versions, and revoke session access dynamically.
 
 ---
 
 ## 🏗 Tech Stack
 
-### Frontend
-
-- React
+### Frontend & UI
+- React (Vite environment)
 - TypeScript
-- Vite
-- Tailwind CSS v4
+- Tailwind CSS
 - shadcn/ui
-- React Router
+- Framer Motion
 
-### State
+### Client-Side Engine
+- **Zustand:** Optimistic global store
+- **Dexie.js (IndexedDB):** Client-side relational tables (workspaces, captures, tasks, resources, knowledgeSources, syncQueue)
+- **Fuse.js:** Fuzzy full-text indexing
+- **PDF.js:** In-browser PDF parser
 
-- Zustand
-
-### Local Storage
-
-- IndexedDB
-- Dexie.js
-
-### Search
-
-- Fuse.js
-
-### Cloud Integration
-
-- Google OAuth
-- Google Drive API
+### Backend API & Ledger
+- **Express.js (Node):** Quiet API ledger
+- **PostgreSQL:** Stores user profiles, linked OAuth drives, push subscription keys, and active device sessions
+- **Google OAuth & Drive API:** Handles secure cloud backup channels
 
 ---
 
-## 📂 Architecture
+## 📂 Data Lifecycle & Flow
 
 ```text
-User
-↓
-Capture
-↓
-IndexedDB (Source of Truth)
-↓
-Search Index + Timeline
-↓
-Background Sync
-↓
-Google Drive
-↓
-Other Device
-↓
-IndexedDB
-↓
-UI
+User Input
+   │
+   ▼
+[IndexedDB (Primary Store)] ──(Optimistic UI Update)──► UI View
+   │
+   ▼
+[Dexie Sync Queue Event]
+   │
+   ▼
+[Background Sync Worker]
+   │
+   ├──► PostgreSQL metadata ledger & Device registry
+   ▼
+[Google Drive Cloud Backup (Compressed Workspace snapshot)]
 ```
 
 ---
 
-## 🏠 Home Experience
+## 🎨 Onboarding & About Flow
 
+Upon signing up or mounting a knowledge source (Google Drive folders or local directories), Base immediately redirects the user to the **About Page** (`/about?onboarding=true`).
+- While they read about Base's local-first philosophy, initial synchronization and local file indexing run silently in the background.
+- A status card monitors progress. Once the sync queue is successfully cleared, a glowing CTA **"Your Base is Ready"** appears, routing them to the home page.
+
+---
+
+## 🚀 Dev Commands
+
+To start the local environment:
+
+```bash
+# Backend server
+cd backend
+npm run dev
+
+# Frontend app
+cd frontend
+npm run dev
 ```
-BASE
-🔍 Search Everything
-💡 New Idea
-▶ Continue Working
-📅 Coming Up
-✅ Today's Tasks
-🕒 Recent Activity
-📌 Pinned Resources
 
+To validate types and production builds:
+```bash
+# Frontend build
+cd frontend
+npm run build
 ```
-The homepage is intentionally simple.
-Every element exists to help the user return to work immediately.
-
----
-
-## 🎨 Design Language
-
-Keywords:
-- Calm
-- Minimal
-- Spacious
-- Notebook-inspired
-- Friendly
-- Fast
-The interface should feel like opening a clean notebook already turned to the page you were working on yesterday.
-
----
-
-## 😊 Companion
-
-Base includes small contextual messages that support the user without interrupting them.
-Examples:
-> Auto-saved. Future-you says thanks.
-> Looks like a busy day. Let's finish one thing at a time.
-> You've been here for a while. Stretch?
-No guilt.
-No streaks.
-No aggressive notifications.
-Just quiet assistance.
----
-
-## 🚀 Guiding Principle
-
-Before adding any feature, ask:
-- Does it reduce cognitive load?
-- Does it reduce searching?
-- Does it preserve context?
-- Does it help the user return to thinking faster?
-If not, it doesn't belong in Base.
-
----
-
-## 🌱 Mission
-Students already spend enough time managing folders, files, tabs, and deadlines.
-Base exists to quietly remember everything else.
-> **A workspace that remembers, so you can focus.**
