@@ -10,6 +10,19 @@ Its goal is simple:
 
 ---
 
+## 🧠 Product Vision
+
+Base is not:
+- ❌ Another notes app
+- ❌ Another task manager
+- ❌ Another cloud drive
+- ❌ Another productivity dashboard
+
+Base is a **smart notebook** that quietly remembers everything surrounding your work.
+Open it, continue where you left off, and get back to thinking.
+
+---
+
 ## ✨ Features
 
 ### 💡 Universal Capture
@@ -102,19 +115,6 @@ Base follows a few simple principles:
 - Local-first, cloud-enabled.
 - Calm over productivity pressure.
 Every feature should reduce cognitive load rather than add to it.
-
----
-
-## 🧠 Product Vision
-
-Base is not:
-- ❌ Another notes app
-- ❌ Another task manager
-- ❌ Another cloud drive
-- ❌ Another productivity dashboard
-
-Base is a **smart notebook** that quietly remembers everything surrounding your work.
-Open it, continue where you left off, and get back to thinking.
 
 ---
 
