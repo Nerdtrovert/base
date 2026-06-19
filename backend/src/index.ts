@@ -53,8 +53,8 @@ const startServer = async () => {
     await initializeDatabase();
     console.log('[Database] Initialization complete');
   } catch (error) {
-    console.error('[Database] Initialization failed:', error);
-    process.exit(1);
+    console.error('[Database] Initialization failed (running without active db connection):', error);
+    console.warn('[Database] Make sure PostgreSQL is running locally or check your network/database connection.');
   }
 
   // API Routes

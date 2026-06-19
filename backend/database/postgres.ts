@@ -59,13 +59,18 @@ export const initializeDatabase = async (): Promise<void> => {
       console.log(`[Database] Loading schema from ${schemaPath}`);
       const schemaSql = fs.readFileSync(schemaPath, 'utf8');
       
-      const statements = schemaSql
+      // Clean single-line comments line-by-line first to prevent statements containing headers from being skipped
+      const cleanSql = schemaSql
+        .split('\n')
+        .filter(line => !line.trim().startsWith('--'))
+        .join('\n');
+
+      const statements = cleanSql
         .split(';')
         .map(s => s.trim())
         .filter(s => s.length > 0);
 
       for (const statement of statements) {
-        if (statement.startsWith('--')) continue;
         try {
           await client.query(statement);
         } catch (stmtError: any) {

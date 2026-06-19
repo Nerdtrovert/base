@@ -130,8 +130,12 @@ export const runNotificationChecks = async () => {
         }
       }
     }
-  } catch (error) {
-    console.error('[Notification Scheduler] Error running notification checks:', error);
+  } catch (error: any) {
+    if (error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED') {
+      console.warn('[Notification Scheduler] Database unreachable. Skipping notification checks.');
+    } else {
+      console.error('[Notification Scheduler] Error running notification checks:', error);
+    }
   }
 };
 
