@@ -1,16 +1,5 @@
 // Push notification helper utilities
-
-const getBackendUrl = () => {
-  if (typeof window === 'undefined') return 'http://localhost:5001';
-  const hostname = window.location.hostname;
-  
-  // Support Microsoft Dev Tunnels dynamically (e.g. mapping frontend *-5173 to backend *-5001)
-  if (hostname.includes('devtunnels.ms')) {
-    return window.location.origin.replace('-5173', '-5001');
-  }
-  
-  return `http://${hostname}:5001`;
-};
+import { BACKEND_URL } from '../lib/api';
 
 function urlBase64ToUint8Array(base64String: string) {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
@@ -70,8 +59,7 @@ export async function subscribeToPushNotifications() {
     }
 
     // 3. Get VAPID key from backend
-    const backendUrl = getBackendUrl();
-    const keyResponse = await fetch(`${backendUrl}/api/notifications/vapid-key`);
+    const keyResponse = await fetch(`${BACKEND_URL}/api/notifications/vapid-key`);
     const { publicKey } = await keyResponse.json();
 
     if (!publicKey) {
@@ -88,7 +76,7 @@ export async function subscribeToPushNotifications() {
     console.log('[Push Notification] Subscribed successfully', subscription);
 
     // 5. Send subscription details to backend
-    const response = await fetch(`${backendUrl}/api/notifications/subscribe`, {
+    const response = await fetch(`${BACKEND_URL}/api/notifications/subscribe`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'

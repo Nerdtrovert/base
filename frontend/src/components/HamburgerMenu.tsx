@@ -130,7 +130,7 @@ export const HamburgerMenu: React.FC = () => {
       setShowAddDriveForm(true);
     } else {
       try {
-        const { BACKEND_URL } = await import('../store/useBaseStore');
+        const { BACKEND_URL } = await import('../lib/api');
         const response = await fetch(`${BACKEND_URL}/api/auth/google/url`);
         const data = await response.json();
         if (data.url) {

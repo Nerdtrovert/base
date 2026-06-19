@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { db, type Workspace, type Capture, type Task, type Resource } from '../services/db';
+import { BACKEND_URL } from '../lib/api';
 
 
 interface User {
@@ -77,6 +78,7 @@ interface BaseState {
   getPendingGDriveSignupContext: () => Promise<PendingGDriveSignupContext | null>;
   logout: () => Promise<void>;
   triggerSync: () => Promise<void>;
+  restoreBackupFromDrive: (email?: string) => Promise<boolean>;
 
   // Drive Accounts
   connectedDriveAccounts: DriveAccount[];
@@ -85,20 +87,6 @@ interface BaseState {
   toggleDriveAccountActive: (email: string) => void;
   fetchConnectedDrives: () => Promise<void>;
 }
-
-const getBackendUrl = () => {
-  if (typeof window === 'undefined') return 'http://localhost:5001';
-  const hostname = window.location.hostname;
-  
-  // Support Microsoft Dev Tunnels dynamically (e.g. mapping frontend *-5173 to backend *-5001)
-  if (hostname.includes('devtunnels.ms')) {
-    return window.location.origin.replace('-5173', '-5001');
-  }
-  
-  return `http://${hostname}:5001`;
-};
-
-export const BACKEND_URL = import.meta.env.VITE_API_URL || getBackendUrl();
 
 const fetchWithTimeout = async (resource: string | URL, options: RequestInit & { timeout?: number } = {}) => {
   const { timeout = 8000, ...customOptions } = options;
@@ -694,6 +682,57 @@ export const useBaseStore = create<BaseState>((set, get) => ({
     } catch (error) {
       console.error('[Sync] Background sync error:', error);
       set({ syncStatus: 'error' });
+    }
+  },
+
+  restoreBackupFromDrive: async (email?: string) => {
+    set({ syncStatus: 'syncing' });
+    try {
+      const activeAccount = get().connectedDriveAccounts.find(acc => acc.isActive);
+      const emailParam = email || (activeAccount ? activeAccount.email : undefined);
+
+      const response = await fetch(`${BACKEND_URL}/api/sync/drive/restore`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: emailParam }),
+        credentials: 'include'
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to restore backup');
+      }
+
+      const { backup } = await response.json();
+      if (!backup) {
+        throw new Error('No backup found');
+      }
+
+      const data = backup;
+
+      // Import into Dexie (IndexedDB)
+      await db.transaction('rw', [db.workspaces, db.captures, db.tasks, db.resources, db.knowledgeSources], async () => {
+        await db.workspaces.clear();
+        await db.captures.clear();
+        await db.tasks.clear();
+        await db.resources.clear();
+        await db.knowledgeSources.clear();
+
+        if (data.workspaces) await db.workspaces.bulkAdd(data.workspaces);
+        if (data.captures) await db.captures.bulkAdd(data.captures);
+        if (data.tasks) await db.tasks.bulkAdd(data.tasks);
+        if (data.resources) await db.resources.bulkAdd(data.resources);
+        if (data.knowledgeSources) await db.knowledgeSources.bulkAdd(data.knowledgeSources);
+      });
+
+      set({ syncStatus: 'success', lastSynced: Date.now() });
+      get().showCompanionMessage('Successfully restored data backup from Google Drive!', 'success');
+      return true;
+    } catch (error: any) {
+      console.error('[Sync] Google Drive restore failed:', error);
+      set({ syncStatus: 'error' });
+      get().showCompanionMessage(error.message || 'Failed to restore backup from Google Drive.', 'warning');
+      return false;
     }
   },
 

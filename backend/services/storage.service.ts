@@ -14,6 +14,11 @@ export interface CloudStorageProvider {
     options: StorageUploadOptions,
     credentials?: { accessToken: string | null; refreshToken: string | null; email?: string }
   ): Promise<{ driveLocation: string; status: 'success' | 'failed' }>;
+  downloadFile(
+    userId: string,
+    name: string,
+    credentials?: { accessToken: string | null; refreshToken: string | null; email?: string }
+  ): Promise<Buffer | null>;
 }
 
 /**
@@ -102,6 +107,60 @@ export class GoogleDriveStorageProvider implements CloudStorageProvider {
       throw error;
     }
   }
+
+  async downloadFile(
+    userId: string,
+    name: string,
+    credentials?: { accessToken: string | null; refreshToken: string | null; email?: string }
+  ): Promise<Buffer | null> {
+    const { accessToken, refreshToken, email } = credentials || {};
+    const isMock = isMockGoogleConfigured() || !accessToken;
+
+    if (isMock) {
+      console.log('[Storage] Running in Mock Google Drive restore mode');
+      return null;
+    }
+
+    try {
+      const client = createGoogleOAuthClient();
+      client.setCredentials({
+        access_token: accessToken,
+        refresh_token: refreshToken
+      });
+
+      if (email) {
+        attachGoogleTokenPersistence(client, userId, email);
+      }
+
+      const { google } = await import('googleapis');
+      const drive = google.drive({ version: 'v3', auth: client });
+
+      // Find the file in appDataFolder
+      const listRes = await drive.files.list({
+        q: `name = '${name}' and 'appDataFolder' in parents and trashed = false`,
+        spaces: 'appDataFolder',
+        fields: 'files(id, name)',
+      });
+
+      if (!listRes.data.files || listRes.data.files.length === 0) {
+        return null;
+      }
+
+      const fileId = listRes.data.files[0].id;
+      if (!fileId) return null;
+
+      // Download the file content as an ArrayBuffer/Buffer
+      const downloadRes = await drive.files.get({
+        fileId,
+        alt: 'media'
+      }, { responseType: 'arraybuffer' });
+
+      return Buffer.from(downloadRes.data as ArrayBuffer);
+    } catch (error) {
+      console.error('[Storage] Google Drive download failed:', error);
+      throw error;
+    }
+  }
 }
 
 /**
@@ -127,6 +186,14 @@ export class S3StorageProvider implements CloudStorageProvider {
       driveLocation: `s3://${process.env.S3_BUCKET_NAME || 'base-app-backups'}/${userId}/${options.name}`,
       status: 'success'
     };
+  }
+
+  async downloadFile(
+    userId: string,
+    name: string
+  ): Promise<Buffer | null> {
+    console.log('[Storage] Running in AWS S3 download mode (skeleton)');
+    return null;
   }
 }
 

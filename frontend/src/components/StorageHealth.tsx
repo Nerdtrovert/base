@@ -5,7 +5,7 @@ import { Button } from './ui/button';
 import { db } from '../services/db';
 
 export const StorageHealth: React.FC = () => {
-  const { syncStatus, lastSynced, connectedDriveAccounts, triggerSync } = useBaseStore();
+  const { syncStatus, lastSynced, connectedDriveAccounts, triggerSync, restoreBackupFromDrive } = useBaseStore();
   const [timeAgo, setTimeAgo] = useState('Never');
 
   const activeAccount = connectedDriveAccounts?.find(a => a.isActive);
@@ -137,6 +137,20 @@ export const StorageHealth: React.FC = () => {
     reader.readAsText(file);
   };
 
+  const handleRestoreFromCloud = async () => {
+    const confirm = window.confirm(
+      'Restore backup from Google Drive? This will overwrite your current local workspaces, captures, tasks, and settings with the cloud backup.'
+    );
+    if (!confirm) return;
+
+    const success = await restoreBackupFromDrive();
+    if (success) {
+      setTimeout(() => {
+        window.location.reload();
+      }, 1500);
+    }
+  };
+
   return (
     <div className="bg-card-bg/40 dark:bg-card-bg/10 border border-border-color rounded-3xl p-5 shadow-sm space-y-4 hover:shadow-md transition-all duration-300">
       {/* Header / State Indicator */}
@@ -243,14 +257,25 @@ export const StorageHealth: React.FC = () => {
       {/* Action Buttons */}
       <div className="flex flex-col gap-2 pt-2 border-t border-border-color/50">
         {isSyncEnabled && (
-          <Button
-            onClick={handleManualBackup}
-            disabled={syncStatus === 'syncing'}
-            className="w-full h-8 text-[11px] font-semibold bg-accent hover:bg-accent/90 text-white rounded-xl flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
-          >
-            <RefreshCw className={`w-3 h-3 ${syncStatus === 'syncing' ? 'animate-spin' : ''}`} />
-            <span>{syncStatus === 'syncing' ? 'Backing up...' : 'Backup to Cloud Now'}</span>
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              onClick={handleManualBackup}
+              disabled={syncStatus === 'syncing'}
+              className="flex-1 h-8 text-[11px] font-semibold bg-accent hover:bg-accent/90 text-white rounded-xl flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
+            >
+              <RefreshCw className={`w-3 h-3 ${syncStatus === 'syncing' ? 'animate-spin' : ''}`} />
+              <span>{syncStatus === 'syncing' ? 'Backing up...' : 'Backup to Cloud'}</span>
+            </Button>
+            <Button
+              onClick={handleRestoreFromCloud}
+              disabled={syncStatus === 'syncing'}
+              variant="outline"
+              className="flex-1 h-8 text-[11px] font-semibold border-border-color hover:border-accent hover:text-accent rounded-xl flex items-center justify-center gap-1.5 cursor-pointer shadow-xs text-text-secondary"
+            >
+              <RefreshCw className={`w-3 h-3 ${syncStatus === 'syncing' ? 'animate-spin' : ''}`} />
+              <span>Restore from Cloud</span>
+            </Button>
+          </div>
         )}
         
         <div className="flex gap-2">

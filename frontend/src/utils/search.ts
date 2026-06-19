@@ -1,5 +1,6 @@
 import Fuse from 'fuse.js';
 import { db } from '../services/db';
+import { BACKEND_URL } from '../lib/api';
 
 export interface SearchResult {
   id: string;
@@ -14,17 +15,6 @@ export interface SearchResult {
   gdriveAccount?: string;
   snippet?: string;
 }
-
-const getBackendUrl = () => {
-  if (typeof window === 'undefined') return 'http://localhost:5001';
-  const hostname = window.location.hostname;
-  if (hostname.includes('devtunnels.ms')) {
-    return window.location.origin.replace('-5173', '-5001');
-  }
-  return `http://${hostname}:5001`;
-};
-
-const BACKEND_URL = getBackendUrl();
 
 export async function searchEverything(query: string, activeDrives: string[] = []): Promise<SearchResult[]> {
   if (!query || query.trim() === '') return [];

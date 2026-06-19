@@ -1,0 +1,10 @@
+services:
+  - type: static
+    name: base-frontend
+    env: static
+    buildCommand: npm ci && npm run build
+    publishPath: dist
+    autoDeploy: true
+    envVars:
+      - key: VITE_API_URL
+        sync: false

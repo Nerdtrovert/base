@@ -5,6 +5,6 @@
   "scripts": {
     "dev": "npx concurrently --kill-others \"npm run dev --prefix backend\" \"npm run dev --prefix frontend\"",
     "build": "npm run build --prefix backend && npm run build --prefix frontend",
-    "start": "npx concurrently --kill-others \"npm start --prefix backend\" \"npm run preview --prefix frontend\""
+    "start": "npm start --prefix backend"
   }
 }

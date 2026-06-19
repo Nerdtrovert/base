@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { useBaseStore, BACKEND_URL } from '../store/useBaseStore';
+import { useBaseStore } from '../store/useBaseStore';
+import { BACKEND_URL } from '../lib/api';
 import { db } from '../services/db';
 import { motion, AnimatePresence } from 'framer-motion';
 import { BrandMark } from '../components/BrandMark';

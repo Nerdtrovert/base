@@ -8,7 +8,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { BrandMark } from '../components/BrandMark';
 
 export const Login: React.FC = () => {
-  const { loginWithEmail, registerWithEmail, registerWithGDrive, getPendingGDriveSignupContext, login, isAuthLoading } = useBaseStore();
+  const { loginWithEmail, registerWithEmail, registerWithGDrive, getPendingGDriveSignupContext, login, isAuthLoading, isAuthenticated } = useBaseStore();
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams] = useSearchParams();
@@ -61,6 +61,12 @@ export const Login: React.FC = () => {
       isMounted = false;
     };
   }, [getPendingGDriveSignupContext, isPendingGDriveSignup]);
+
+  useEffect(() => {
+    if (!isAuthLoading && isAuthenticated) {
+      navigate('/', { replace: true });
+    }
+  }, [isAuthLoading, isAuthenticated, navigate]);
 
   // Password requirements calculators
   const hasMinLength = password.length >= 8;

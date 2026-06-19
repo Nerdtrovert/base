@@ -5,7 +5,8 @@ import {
   pullSyncChanges,
   getSyncStatus,
   initializeDeviceSyncPointer,
-  uploadBackup
+  uploadBackup,
+  restoreBackup
 } from '../services/sync.service';
 import {
   updateDeviceLastSeen,
@@ -151,6 +152,24 @@ router.post('/upload', authMiddleware, async (req, res) => {
   } catch (error) {
     console.error('[Sync] Error uploading backup:', error);
     res.status(500).json({ error: 'Failed to upload backup' });
+  }
+});
+
+// Google Drive Restore Backup endpoint
+router.post('/drive/restore', authMiddleware, async (req, res) => {
+  try {
+    const userId = req.user!.userId;
+    const { email } = req.body;
+
+    const backup = await restoreBackup(userId, email);
+    if (!backup) {
+      return res.status(404).json({ error: 'No backup file found in Google Drive appDataFolder.' });
+    }
+
+    res.json({ success: true, backup });
+  } catch (error: any) {
+    console.error('[Sync] Restore backup error:', error);
+    res.status(500).json({ error: error.message || 'Failed to restore backup' });
   }
 });
 

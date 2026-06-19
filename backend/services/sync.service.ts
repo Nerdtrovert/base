@@ -254,3 +254,33 @@ export const uploadBackup = async (userId: string, data: any, email?: string): P
     throw error;
   }
 };
+
+export const restoreBackup = async (userId: string, email?: string): Promise<any | null> => {
+  try {
+    const tokenRecord = await getGoogleTokensForUser(userId, email);
+    if (!tokenRecord.accessToken) {
+      throw new Error('Google Drive account not connected.');
+    }
+
+    const storageProvider = getStorageProvider();
+    const fileBuffer = await storageProvider.downloadFile(
+      userId,
+      'BaseBackup.json',
+      {
+        accessToken: tokenRecord.accessToken,
+        refreshToken: tokenRecord.refreshToken,
+        email: tokenRecord.email || undefined
+      }
+    );
+
+    if (!fileBuffer) {
+      return null;
+    }
+
+    const decompressed = zlib.gunzipSync(fileBuffer);
+    return JSON.parse(decompressed.toString('utf8'));
+  } catch (error) {
+    console.error('[Sync] Error in restoreBackup service:', error);
+    throw error;
+  }
+};

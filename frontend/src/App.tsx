@@ -21,6 +21,7 @@ function AppContent() {
   const { checkAuthStatus, setSearchOpen, isAuthenticated, isAuthLoading } = useBaseStore();
   const location = useLocation();
   const navigate = useNavigate();
+  const ksCount = useLiveQuery(() => db.knowledgeSources.count()) ?? null;
 
   // Check auth status on mount
   useEffect(() => {
@@ -75,8 +76,6 @@ function AppContent() {
       </div>
     );
   }
-
-  const ksCount = useLiveQuery(() => db.knowledgeSources.count()) ?? null;
 
   // Redirect to login if not authenticated and trying to access private page
   if (!isAuthenticated && location.pathname !== '/login' && location.pathname !== '/auth/callback' && location.pathname !== '/about') {

@@ -23,6 +23,7 @@ import {
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { extractTextFromPdf } from '../utils/pdfParser';
+import { BACKEND_URL } from '../lib/api';
 import { motion, AnimatePresence } from 'framer-motion';
 
 export const WorkspaceDetail: React.FC = () => {
@@ -63,17 +64,6 @@ export const WorkspaceDetail: React.FC = () => {
   const [notesFilter, setNotesFilter] = useState<'all' | 'starred'>('all');
   const [notesSearch, setNotesSearch] = useState('');
   const [showRelatedNoteModal, setShowRelatedNoteModal] = useState<Capture | null>(null);
-
-  const getBackendUrl = () => {
-    if (typeof window === 'undefined') return 'http://localhost:5001';
-    const hostname = window.location.hostname;
-    if (hostname.includes('devtunnels.ms')) {
-      return window.location.origin.replace('-5173', '-5001');
-    }
-    return `http://${hostname}:5001`;
-  };
-
-  const BACKEND_URL = getBackendUrl();
 
   // Load GDrive accounts on mount
   useEffect(() => {

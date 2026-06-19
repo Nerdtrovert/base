@@ -2,6 +2,8 @@ import express from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import dotenv from 'dotenv';
+import fs from 'fs';
+import path from 'path';
 import { initializeDatabase } from '../database/postgres';
 import { loggingMiddleware, errorHandler } from '../middleware/auth';
 import authRoutes from '../routes/auth';
@@ -62,6 +64,25 @@ const startServer = async () => {
   app.use('/api/sync', syncRoutes);
   app.use('/api/devices', deviceRoutes);
   app.use('/api/notifications', notificationRoutes);
+
+  const frontendDistPath = path.resolve(__dirname, '../../../frontend/dist');
+  const frontendIndexPath = path.join(frontendDistPath, 'index.html');
+
+  if (fs.existsSync(frontendIndexPath)) {
+    app.use(express.static(frontendDistPath));
+
+    app.get('*', (req, res, next) => {
+      if (req.path.startsWith('/api')) {
+        return next();
+      }
+
+      if (req.accepts('html')) {
+        return res.sendFile(frontendIndexPath);
+      }
+
+      return next();
+    });
+  }
 
   // Health check
   app.get('/api/health', (req, res) => {
