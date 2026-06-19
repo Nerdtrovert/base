@@ -34,7 +34,7 @@ export class GoogleDriveStorageProvider implements CloudStorageProvider {
     const { name, mimeType } = options;
     const { accessToken, refreshToken, email } = credentials || {};
 
-    const isMock = isMockGoogleConfigured() || !accessToken;
+    const isMock = isMockGoogleConfigured() || (!accessToken && !refreshToken);
 
     if (isMock) {
       console.log('[Storage] Running in Mock Google Drive backup mode');
@@ -47,8 +47,8 @@ export class GoogleDriveStorageProvider implements CloudStorageProvider {
     try {
       const client = createGoogleOAuthClient();
       client.setCredentials({
-        access_token: accessToken,
-        refresh_token: refreshToken
+        access_token: accessToken || undefined,
+        refresh_token: refreshToken || undefined
       });
 
       if (email) {
@@ -114,7 +114,7 @@ export class GoogleDriveStorageProvider implements CloudStorageProvider {
     credentials?: { accessToken: string | null; refreshToken: string | null; email?: string }
   ): Promise<Buffer | null> {
     const { accessToken, refreshToken, email } = credentials || {};
-    const isMock = isMockGoogleConfigured() || !accessToken;
+    const isMock = isMockGoogleConfigured() || (!accessToken && !refreshToken);
 
     if (isMock) {
       console.log('[Storage] Running in Mock Google Drive restore mode');
@@ -124,8 +124,8 @@ export class GoogleDriveStorageProvider implements CloudStorageProvider {
     try {
       const client = createGoogleOAuthClient();
       client.setCredentials({
-        access_token: accessToken,
-        refresh_token: refreshToken
+        access_token: accessToken || undefined,
+        refresh_token: refreshToken || undefined
       });
 
       if (email) {

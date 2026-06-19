@@ -258,7 +258,7 @@ export const uploadBackup = async (userId: string, data: any, email?: string): P
 export const restoreBackup = async (userId: string, email?: string): Promise<any | null> => {
   try {
     const tokenRecord = await getGoogleTokensForUser(userId, email);
-    if (!tokenRecord.accessToken) {
+    if (!tokenRecord.accessToken && !tokenRecord.refreshToken) {
       throw new Error('Google Drive account not connected.');
     }
 

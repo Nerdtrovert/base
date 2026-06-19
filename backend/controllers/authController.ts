@@ -19,7 +19,7 @@ import { verifyRefreshTokenInDb } from '../services/auth.service';
 export const getGoogleAuthUrlController = async (req: Request, res: Response): Promise<void> => {
   try {
     const authUrl = generateGoogleAuthUrl();
-    res.json({ authUrl });
+    res.json({ authUrl, url: authUrl });
   } catch (error) {
     console.error('[AuthController] Error generating auth URL:', error);
     res.status(500).json({ error: 'Failed to generate Google auth URL' });

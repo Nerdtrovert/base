@@ -208,13 +208,13 @@ export const attachGoogleTokenPersistence = (
 export const createGoogleDriveClientForUser = async (userId: string, email?: string) => {
   const tokenRecord = await getGoogleTokensForUser(userId, email);
 
-  if (!tokenRecord.accessToken) {
+  if (!tokenRecord.accessToken && !tokenRecord.refreshToken) {
     return null;
   }
 
   const client = createGoogleOAuthClient();
   client.setCredentials({
-    access_token: tokenRecord.accessToken,
+    access_token: tokenRecord.accessToken || undefined,
     refresh_token: tokenRecord.refreshToken || undefined
   });
 
