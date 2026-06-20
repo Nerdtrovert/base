@@ -1,5 +1,6 @@
 import { useBaseStore } from '../store/useBaseStore';
 import { extractTextFromPdf } from './pdfParser';
+import { extractTextFromDocx, extractTextFromPptx } from './officeParser';
 
 /**
  * Indexes a single local File object, extracts its text (if it's a PDF or text file),
@@ -19,6 +20,24 @@ export const indexLocalFile = async (file: File, relativePath: string) => {
       extractedText = await extractTextFromPdf(buffer);
     } catch (e) {
       console.warn(`[Index] Failed to extract text from PDF: ${file.name}`, e);
+    }
+  } else if (ext === 'docx') {
+    type = 'file';
+    mimeType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+    try {
+      const buffer = await file.arrayBuffer();
+      extractedText = await extractTextFromDocx(buffer);
+    } catch (e) {
+      console.warn(`[Index] Failed to extract text from Word Document: ${file.name}`, e);
+    }
+  } else if (ext === 'pptx') {
+    type = 'file';
+    mimeType = 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
+    try {
+      const buffer = await file.arrayBuffer();
+      extractedText = await extractTextFromPptx(buffer);
+    } catch (e) {
+      console.warn(`[Index] Failed to extract text from PowerPoint: ${file.name}`, e);
     }
   } else if (['png', 'jpg', 'jpeg', 'webp', 'gif'].includes(ext)) {
     type = 'image';
