@@ -290,7 +290,7 @@ export const About: React.FC = () => {
             </span>
           </div>
           <p className="text-[11px] font-mono text-text-muted">
-            Version 1.1.7
+            Version 1.8.5
           </p>
           <p className="text-[11px] text-text-secondary/80 leading-relaxed max-w-xs mx-auto font-normal">
             Built to remember the little things, <br />

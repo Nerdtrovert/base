@@ -6,6 +6,7 @@ import { ExternalLink, Pin, Trash2, Globe, FileText, HardDrive } from 'lucide-re
 import { Card, CardContent } from './ui/card';
 import { Button } from './ui/button';
 import { motion, AnimatePresence } from 'framer-motion';
+import { openAndIndexResource } from '../utils/smartCache';
 
 interface PinnedResourcesProps {
   workspaceId?: string | null;
@@ -185,6 +186,7 @@ export const PinnedResources: React.FC<PinnedResourcesProps> = ({ workspaceId = 
                           href={formatResourceUrl(res.url)}
                           target="_blank"
                           rel="noopener noreferrer"
+                          onClick={() => openAndIndexResource(res.id)}
                           className="flex items-center gap-1 text-[11px] font-semibold text-accent hover:bg-accent-light px-2.5 py-1.5 rounded-lg border border-accent/10 transition-colors"
                         >
                           <span>Open</span>

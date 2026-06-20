@@ -211,8 +211,8 @@ router.get('/drive/search', authMiddleware, async (req, res) => {
     
     const { drive } = driveContext;
     const escapedQuery = qStr.replace(/'/g, "\\'");
-    // Search for non-folders that are not trashed and match name query
-    const driveQuery = `name contains '${escapedQuery}' and mimeType != 'application/vnd.google-apps.folder' and trashed = false`;
+    // Search for non-folders that are not trashed and match name or file content query
+    const driveQuery = `fullText contains '${escapedQuery}' and mimeType != 'application/vnd.google-apps.folder' and trashed = false`;
     
     const response = await drive.files.list({
       q: driveQuery,
@@ -233,6 +233,43 @@ router.get('/drive/search', authMiddleware, async (req, res) => {
   } catch (error) {
     console.error('[Drive Search] Error:', error);
     res.status(500).json({ error: 'Failed to search Google Drive' });
+  }
+});
+
+// Google Drive File Download proxy
+router.get('/drive/download/:fileId', authMiddleware, async (req, res) => {
+  try {
+    const userId = req.user!.userId;
+    const { fileId } = req.params;
+    const email = req.query.email as string;
+
+    if (!fileId) {
+      return res.status(400).json({ error: 'Missing fileId' });
+    }
+
+    const isMock = isMockGoogleConfigured();
+    if (isMock) {
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="mock-${fileId}.pdf"`);
+      return res.send(Buffer.from('%PDF-1.4 ... mock content'));
+    }
+
+    const driveContext = await createGoogleDriveClientForUser(userId, email);
+    if (!driveContext) {
+      return res.status(401).json({ error: 'Google account not connected or unauthorized' });
+    }
+    const { drive } = driveContext;
+
+    const response: any = await drive.files.get(
+      { fileId: fileId as string, alt: 'media' },
+      { responseType: 'stream' } as any
+    );
+
+    res.setHeader('Content-Type', response.headers['content-type'] || 'application/octet-stream');
+    response.data.pipe(res);
+  } catch (error) {
+    console.error('[Drive Download] Error:', error);
+    res.status(500).json({ error: 'Failed to download file from Google Drive' });
   }
 });
 

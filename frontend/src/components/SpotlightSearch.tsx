@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useBaseStore } from '../store/useBaseStore';
 import { searchEverything, type SearchResult } from '../utils/search';
+import { db } from '../services/db';
+import { openAndIndexResource } from '../utils/smartCache';
 import { Search, Folder, MessageSquare, CheckSquare, Link, CornerDownLeft, HardDrive, FileText } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -123,7 +125,34 @@ export const SpotlightSearch: React.FC = () => {
       setActiveWorkspaceId(item.id);
       navigate(`/workspace/${item.id}`);
     } else if (item.type === 'gdrive') {
-      if (item.url) window.open(item.url, '_blank');
+      const itemUrl = item.url;
+      if (itemUrl) {
+        window.open(itemUrl, '_blank');
+        const itemTitle = item.title;
+        const mimeType = (item as any).mimeType;
+        (async () => {
+          try {
+            let existing = await db.resources.where('url').equals(itemUrl).first();
+            if (!existing) {
+              const activeWsId = useBaseStore.getState().activeWorkspaceId;
+              const isPdf = itemTitle.toLowerCase().endsWith('.pdf') || mimeType === 'application/pdf';
+              await useBaseStore.getState().createResource({
+                title: itemTitle,
+                url: itemUrl,
+                type: isPdf ? 'pdf' : 'drive',
+                workspaceId: activeWsId || null,
+                mimeType: mimeType
+              });
+              existing = await db.resources.where('url').equals(itemUrl).first();
+            }
+            if (existing) {
+              await openAndIndexResource(existing.id);
+            }
+          } catch (err) {
+            console.error('[Drive Open] Failed to lazily save/index:', err);
+          }
+        })();
+      }
     } else if (item.type === 'tag') {
       // Navigate to timeline with this tag pre-filled!
       navigate(`/timeline?search=${encodeURIComponent(item.title)}`);

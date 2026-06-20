@@ -2,6 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useBaseStore } from '../store/useBaseStore';
 import { db } from '../services/db';
+import { openAndIndexResource } from '../utils/smartCache';
 import { QuickCapture } from '../components/QuickCapture';
 import { ContinueWorking } from '../components/ContinueWorking';
 import { PwaInstallPrompt } from '../components/PwaInstallPrompt';
@@ -202,7 +203,34 @@ export const Home: React.FC = () => {
       setActiveWorkspaceId(item.id);
       navigate(`/workspace/${item.id}`);
     } else if (item.type === 'gdrive') {
-      if (item.url) window.open(item.url, '_blank');
+      const itemUrl = item.url;
+      if (itemUrl) {
+        window.open(itemUrl, '_blank');
+        const itemTitle = item.title;
+        const mimeType = (item as any).mimeType;
+        (async () => {
+          try {
+            let existing = await db.resources.where('url').equals(itemUrl).first();
+            if (!existing) {
+              const activeWsId = useBaseStore.getState().activeWorkspaceId;
+              const isPdf = itemTitle.toLowerCase().endsWith('.pdf') || mimeType === 'application/pdf';
+              await useBaseStore.getState().createResource({
+                title: itemTitle,
+                url: itemUrl,
+                type: isPdf ? 'pdf' : 'drive',
+                workspaceId: activeWsId || null,
+                mimeType: mimeType
+              });
+              existing = await db.resources.where('url').equals(itemUrl).first();
+            }
+            if (existing) {
+              await openAndIndexResource(existing.id);
+            }
+          } catch (err) {
+            console.error('[Drive Open] Failed to lazily save/index:', err);
+          }
+        })();
+      }
     } else if (item.type === 'tag') {
       navigate(`/timeline?search=${encodeURIComponent(item.title)}`);
     } else if (item.workspaceId) {

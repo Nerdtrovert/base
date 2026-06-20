@@ -1,8 +1,0 @@
-services:
-  - type: web
-    name: base-backend
-    env: node
-    plan: starter
-    buildCommand: npm ci && npm run build
-    startCommand: npm start
-    autoDeploy: true

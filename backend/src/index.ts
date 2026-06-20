@@ -68,21 +68,6 @@ const startServer = () => {
     });
   });
 
-  // Root endpoint
-  app.get('/', (req, res) => {
-    res.json({
-      name: 'Base Backend',
-      version: '1.0.0',
-      description: 'Thin orchestration layer for Base PWA',
-      endpoints: {
-        auth: '/api/auth',
-        sync: '/api/sync',
-        devices: '/api/devices',
-        health: '/api/health'
-      }
-    });
-  });
-
   // Serve Frontend Static Files (registered AFTER API routes)
   const frontendDistPath = path.resolve(__dirname, '../../../frontend/dist');
   const frontendIndexPath = path.join(frontendDistPath, 'index.html');
@@ -101,6 +86,20 @@ const startServer = () => {
     });
   } else {
     console.warn('[Server] Frontend dist folder not found or index.html missing. serving API only.');
+
+    app.get('/', (req, res) => {
+      res.json({
+        name: 'Base Backend',
+        version: '1.0.0',
+        description: 'Thin orchestration layer for Base PWA',
+        endpoints: {
+          auth: '/api/auth',
+          sync: '/api/sync',
+          devices: '/api/devices',
+          health: '/api/health'
+        }
+      });
+    });
   }
 
   // 404 handler
