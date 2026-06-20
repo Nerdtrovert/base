@@ -24,7 +24,12 @@ export const indexLocalFile = async (file: File, relativePath: string) => {
     type = 'image';
     if (ext === 'jpg' || ext === 'jpeg') mimeType = 'image/jpeg';
     else mimeType = `image/${ext}`;
-  } else if (['txt', 'md', 'json', 'js', 'ts', 'html', 'css'].includes(ext)) {
+  } else if ([
+    'txt', 'md', 'json', 'js', 'ts', 'html', 'css',
+    'java', 'c', 'cpp', 'cc', 'cxx', 'h', 'hpp',
+    'py', 'go', 'rs', 'kt', 'cs', 'sh', 'bash', 'zsh',
+    'yml', 'yaml', 'xml', 'toml', 'ini', 'sql', 'dockerfile'
+  ].includes(ext)) {
     try {
       extractedText = await file.text();
       // Cap text to avoid huge DB records

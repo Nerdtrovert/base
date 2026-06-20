@@ -93,9 +93,35 @@ function AppContent() {
   useEffect(() => {
     if (!isAuthenticated) return;
     
-    const intervalId = setInterval(() => {
-      console.log('[Sync Worker] Running scheduled 30s sync check...');
-      useBaseStore.getState().processSyncQueue();
+    const intervalId = setInterval(async () => {
+      if (!navigator.onLine) {
+        console.log('[Sync Worker] Browser is offline. Skipping sync check.');
+        return;
+      }
+      
+      try {
+        const store = useBaseStore.getState();
+        const pendingCount = await db.syncQueue
+          .where('status')
+          .anyOf(['pending', 'failed'])
+          .count();
+
+        console.log('[Sync Worker] Running scheduled 30s sync check...', {
+          pendingCount,
+          syncStatus: store.syncStatus,
+          hasUnsyncedChanges: store.hasUnsyncedChanges
+        });
+
+        if (pendingCount > 0) {
+          console.log(`[Sync Worker] Found ${pendingCount} pending events. Processing sync queue...`);
+          await store.processSyncQueue();
+        } else if (store.syncStatus === 'error' || store.hasUnsyncedChanges) {
+          console.log('[Sync Worker] No queue events, but sync is in error state or has unsynced changes. Triggering full sync backup...');
+          await store.triggerSync();
+        }
+      } catch (err) {
+        console.error('[Sync Worker] Error in scheduled sync worker:', err);
+      }
     }, 30000);
 
     return () => clearInterval(intervalId);
