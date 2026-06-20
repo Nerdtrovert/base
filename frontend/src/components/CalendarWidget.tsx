@@ -1,19 +1,39 @@
 import React from 'react';
 import { Calendar } from 'lucide-react';
-
-interface Event {
-  dayLabel: string;
-  title: string;
-  time?: string;
-  type: 'assignment' | 'review' | 'exam';
-}
+import { useLiveQuery } from 'dexie-react-hooks';
+import { db } from '../services/db';
 
 export const CalendarWidget: React.FC = () => {
-  const events: Event[] = [
-    { dayLabel: 'Today', title: 'OS Assignment', type: 'assignment', time: '2:00 PM' },
-    { dayLabel: 'Tomorrow', title: 'Studio Review', type: 'review', time: '10:00 AM' },
-    { dayLabel: 'Friday', title: 'Internal Exam', type: 'exam', time: '9:00 AM' }
-  ];
+  const upcomingTasks = useLiveQuery(async () => {
+    const tasks = await db.tasks.toArray();
+    const activeTasks = tasks.filter(t => !t.completed);
+    
+    // Sort tasks by due date ascending
+    return activeTasks.sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
+  }) || [];
+
+  const displayTasks = upcomingTasks.slice(0, 3);
+
+  // Get relative label for a due date
+  const getDayLabel = (dueDateStr: string) => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const targetDate = new Date(dueDateStr);
+    targetDate.setHours(0, 0, 0, 0);
+
+    const diffTime = targetDate.getTime() - today.getTime();
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+    if (diffDays === 0) return 'Today';
+    if (diffDays === 1) return 'Tomorrow';
+    
+    // Otherwise show day of the week or date
+    const daysOfWeek = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    if (diffDays > 1 && diffDays < 7) {
+      return daysOfWeek[targetDate.getDay()];
+    }
+    return targetDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  };
 
   return (
     <div className="pb-4">
@@ -25,26 +45,25 @@ export const CalendarWidget: React.FC = () => {
       <div className="border-t border-border-color my-4" />
 
       <div className="space-y-4">
-        {events.map((event, idx) => (
-          <React.Fragment key={idx}>
-            <div className="flex flex-col text-sm py-1 animate-fade-in space-y-1">
+        {displayTasks.map((task, idx) => (
+          <React.Fragment key={task.id}>
+            <div className="flex flex-col text-sm py-1 animate-fade-in space-y-1 text-left">
               <span className="font-semibold text-text-primary">
-                {event.dayLabel}
+                {getDayLabel(task.dueDate)}
               </span>
-              {event.time && (
-                <span className="text-xs font-normal text-text-muted">
-                  {event.time}
-                </span>
-              )}
               <span className="font-normal text-text-secondary">
-                {event.title}
+                {task.title}
               </span>
             </div>
-            {idx < events.length - 1 && (
+            {idx < displayTasks.length - 1 && (
               <div className="border-t border-border-color my-4" />
             )}
           </React.Fragment>
         ))}
+
+        {displayTasks.length === 0 && (
+          <p className="text-xs text-text-muted italic py-2 text-left">All caught up! No upcoming tasks or deadlines.</p>
+        )}
       </div>
     </div>
   );

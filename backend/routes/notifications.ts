@@ -28,39 +28,7 @@ router.post('/subscribe', authMiddleware, async (req, res) => {
       url: '/'
     });
 
-    // Schedule simulated calendar reminder (representing 4-5 hours before event check-in)
-    setTimeout(async () => {
-      try {
-        await sendPushNotification(userId, {
-          title: 'Upcoming Event Reminder',
-          body: 'Calendar Check-in: "Machine Learning Workshop" starts in 4 hours (16:00).',
-          url: '/'
-        });
-      } catch (err) {
-        console.error('Error sending scheduled event push:', err);
-      }
-    }, 15000);
-
-    // Schedule simulated morning motivation prompt (quiet check-in)
-    setTimeout(async () => {
-      try {
-        const motivations = [
-          'A quiet context leads to clear focus. Take a deep breath.',
-          'Your notes and tasks are safe. Take it one step at a time.',
-          'Auto-saved. Future-you says thanks for registering notes today.',
-          'One task at a time. The workspace remembers, so you do not have to.'
-        ];
-        const randomQuote = motivations[Math.floor(Math.random() * motivations.length)];
-        
-        await sendPushNotification(userId, {
-          title: 'Quiet Focus Prompt',
-          body: randomQuote,
-          url: '/'
-        });
-      } catch (err) {
-        console.error('Error sending motivation push:', err);
-      }
-    }, 35000);
+    // We successfully subscribed and verified connection with the confirmation push above!
 
     res.json({ success: true, message: 'Subscribed successfully' });
   } catch (error: any) {

@@ -13,7 +13,7 @@ import { About } from './pages/About';
 import { Onboarding } from './pages/Onboarding';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from './services/db';
-import { Home as HomeIcon, Search, PlusCircle, Folder, CheckSquare, Clock } from 'lucide-react';
+import { Home as HomeIcon, Search, PlusCircle, Folder, CheckSquare } from 'lucide-react';
 import { BrandMark } from './components/BrandMark';
 
 // Wrapper component to handle routing hooks (useLocation, checkAuth, mobile actions)
@@ -296,18 +296,6 @@ function AppContent() {
         >
           <CheckSquare className="w-5 h-5" />
           <span>Tasks</span>
-        </button>
-
-        <button
-          onClick={() => navigate("/timeline")}
-          className={`flex flex-col items-center gap-1 text-[10px] font-medium transition-colors ${
-            location.pathname === "/timeline"
-              ? "text-accent"
-              : "text-text-secondary"
-          }`}
-        >
-          <Clock className="w-5 h-5" />
-          <span>Memory Replay</span>
         </button>
       </div>
     </div>

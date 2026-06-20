@@ -7,6 +7,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { BrandMark } from '../components/BrandMark';
 import { ArrowRight, ArrowLeft, HardDrive, Check, ShieldCheck, FolderPlus, Info, FolderOpen, AlertCircle } from 'lucide-react';
 import { Button } from '../components/ui/button';
+import { Input } from '../components/ui/input';
 import { traverseAndIndexDirectory, indexFileList } from '../utils/localFolderIndexer';
 
 export const Onboarding: React.FC = () => {
@@ -31,6 +32,25 @@ export const Onboarding: React.FC = () => {
   ];
 
   const [folders, setFolders] = useState<{ id: string; name: string }[]>(defaultFolders);
+  const [customFolderName, setCustomFolderName] = useState('');
+
+  const handleAddCustomFolder = () => {
+    if (!customFolderName.trim()) return;
+    const name = customFolderName.trim();
+    if (!folders.some(f => f.name.toLowerCase() === name.toLowerCase())) {
+      const newFolder = {
+        id: `custom-${crypto.randomUUID()}`,
+        name
+      };
+      setFolders(prev => [...prev, newFolder]);
+      setSelectedFolders(prev => [...prev, name]);
+    } else {
+      if (!selectedFolders.includes(name)) {
+        setSelectedFolders(prev => [...prev, name]);
+      }
+    }
+    setCustomFolderName('');
+  };
 
   const fetchFolders = async (email?: string) => {
     try {
@@ -405,6 +425,24 @@ export const Onboarding: React.FC = () => {
                     <div className="flex items-center gap-2 text-xs font-semibold text-text-primary px-1 select-none">
                       <FolderPlus className="w-4 h-4 text-accent" />
                       <span>Select Google Drive folders to index:</span>
+                    </div>
+
+                    {/* Add Custom Folder Input */}
+                    <div className="flex gap-2">
+                      <Input
+                        type="text"
+                        placeholder="Or enter folder name manually..."
+                        value={customFolderName}
+                        onChange={(e) => setCustomFolderName(e.target.value)}
+                        className="bg-bg-app border-border-color rounded-xl h-10 text-xs focus:border-accent"
+                      />
+                      <Button
+                        type="button"
+                        onClick={handleAddCustomFolder}
+                        className="bg-accent hover:bg-accent/90 text-white font-semibold rounded-xl h-10 px-4 shrink-0 text-xs cursor-pointer border-none"
+                      >
+                        Add
+                      </Button>
                     </div>
 
                     <div className="grid grid-cols-2 gap-2">

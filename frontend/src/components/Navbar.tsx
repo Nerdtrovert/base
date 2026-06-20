@@ -1,7 +1,7 @@
 import React from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useBaseStore } from '../store/useBaseStore';
-import { Search, LogIn, LogOut, Sun, Moon, Download } from 'lucide-react';
+import { Search, LogIn, LogOut, Sun, Moon, Download, ArrowLeft } from 'lucide-react';
 import { Button } from './ui/button';
 import { HamburgerMenu } from './HamburgerMenu';
 import { BrandMark } from './BrandMark';
@@ -85,6 +85,17 @@ export const Navbar: React.FC = () => {
       <div className="max-w-6xl mx-auto px-4 md:px-6 h-16 flex items-center justify-between">
         
         <div className="flex items-center gap-2">
+          {/* Universal Back Button (shown everywhere except Home page) */}
+          {!isHomePage && (
+            <button
+              onClick={() => navigate(-1)}
+              className="h-9 w-9 text-text-secondary hover:text-accent hover:bg-bg-app border border-border-color/85 rounded-xl flex items-center justify-center cursor-pointer transition-colors shrink-0 mr-1 animate-fade-in"
+              title="Go Back"
+            >
+              <ArrowLeft className="w-4 h-4" />
+            </button>
+          )}
+
           {/* Hamburger Menu Toggle & Side Drawer */}
           <HamburgerMenu />
 

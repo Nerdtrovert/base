@@ -52,10 +52,19 @@ export const initializeDatabase = async (): Promise<void> => {
   const client = await getClient();
   
   try {
-    // Determine path to schema.sql
+    // Set a statement timeout of 10 seconds for migrations to prevent locking/hanging indefinitely
+    await client.query('SET statement_timeout = 10000');
+
+    // Determine path to schema.sql robustly
     let schemaPath = path.join(process.cwd(), 'database', 'schema.sql');
     if (!fs.existsSync(schemaPath)) {
-      schemaPath = path.join(__dirname, 'schema.sql');
+      schemaPath = path.join(process.cwd(), 'backend', 'database', 'schema.sql');
+    }
+    if (!fs.existsSync(schemaPath)) {
+      schemaPath = path.resolve(__dirname, '../../database/schema.sql');
+    }
+    if (!fs.existsSync(schemaPath)) {
+      schemaPath = path.resolve(__dirname, 'schema.sql');
     }
 
     if (fs.existsSync(schemaPath)) {
@@ -98,7 +107,13 @@ export const initializeDatabase = async (): Promise<void> => {
       if (userCount === 0) {
         let seedPath = path.join(process.cwd(), 'database', 'seed.sql');
         if (!fs.existsSync(seedPath)) {
-          seedPath = path.join(__dirname, 'seed.sql');
+          seedPath = path.join(process.cwd(), 'backend', 'database', 'seed.sql');
+        }
+        if (!fs.existsSync(seedPath)) {
+          seedPath = path.resolve(__dirname, '../../database/seed.sql');
+        }
+        if (!fs.existsSync(seedPath)) {
+          seedPath = path.resolve(__dirname, 'seed.sql');
         }
 
         if (fs.existsSync(seedPath)) {
@@ -118,6 +133,20 @@ export const initializeDatabase = async (): Promise<void> => {
     throw error;
   } finally {
     client.release();
+  }
+};
+
+export const checkDbHealth = async (): Promise<boolean> => {
+  try {
+    const client = await pool.connect();
+    try {
+      await client.query('SELECT 1');
+      return true;
+    } finally {
+      client.release();
+    }
+  } catch (err) {
+    return false;
   }
 };
 
